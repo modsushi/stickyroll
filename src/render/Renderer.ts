@@ -11,6 +11,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { litMode } from './litMaterial';
 
 export type Quality = 'low' | 'high';
 
@@ -202,6 +203,7 @@ export class Renderer {
       `gl     ${this.renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL1'}`,
       `gpu    ${device}`,
       `quality ${this.quality}`,
+      `lit    ${litMode}`,
     ].join('\n');
   }
 }

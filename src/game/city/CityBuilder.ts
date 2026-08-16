@@ -22,11 +22,11 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
-  MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
   Vector3,
 } from 'three';
+import { makeLit } from '../../render/litMaterial';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { assets } from '../../core/Assets';
 import { Rand, clamp } from '../../core/Math';
@@ -285,7 +285,7 @@ export class CityBuilder {
       if (!merged) continue;
       const mesh = new Mesh(
         merged,
-        new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
+        makeLit({ vertexColors: true, roughness: 0.95, metalness: 0 })
       );
       mesh.position.y = y;
       mesh.receiveShadow = true;
@@ -306,7 +306,7 @@ export class CityBuilder {
     skirt.rotateX(-Math.PI / 2);
     const skirtMesh = new Mesh(
       skirt,
-      new MeshStandardMaterial({ color: 0x7d8790, roughness: 1, metalness: 0 })
+      makeLit({ color: 0x7d8790, roughness: 1, metalness: 0 })
     );
     skirtMesh.position.y = -0.06;
     skirtMesh.receiveShadow = false;
@@ -371,7 +371,7 @@ export class CityBuilder {
       if (!merged) continue;
       const mesh = new Mesh(
         merged,
-        new MeshStandardMaterial({ color, roughness: 0.95, metalness: 0 })
+        makeLit({ color, roughness: 0.95, metalness: 0 })
       );
       mesh.castShadow = true;
       mesh.receiveShadow = true;

@@ -24,6 +24,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   MeshStandardMaterial,
   OrthographicCamera,
   PerspectiveCamera,
@@ -192,11 +193,14 @@ export function runSelfTest(
   // black while leaving the sky and every untextured test perfectly correct —
   // so a failure here and a pass at 'instanced lit boxes' means the atlas, not
   // the pipeline.
-  let atlas: MeshStandardMaterial | undefined;
+  // Matched by having a map rather than by material class: the city compiles to
+  // Lambert on touch devices, and testing for Standard would find nothing there
+  // and report a texture failure that never happened.
+  let atlas: (MeshStandardMaterial | MeshLambertMaterial) | undefined;
   gameScene.traverse((o) => {
     if (atlas) return;
     const mat = (o as Mesh).material as MeshStandardMaterial | undefined;
-    if (mat && (mat as MeshStandardMaterial).isMeshStandardMaterial && mat.map) atlas = mat;
+    if (mat && mat.map && mat.map.image) atlas = mat;
   });
   if (atlas) {
     const texScene = new Scene();
@@ -350,6 +354,28 @@ export function runSelfTest(
     dirLight.visible = false;
     run('full: no directional light', () => renderer.render(gameScene, gameCamera));
     dirLight.visible = true;
+  }
+
+  // Cheaper lit shaders on the identical scene. If Lambert draws where Standard
+  // is black, fragment cost is confirmed as the axis and the fix is real rather
+  // than a coincidence.
+  gameScene.overrideMaterial = new MeshLambertMaterial({ color: 0xbb9966 });
+  run('full: lambert override', () => renderer.render(gameScene, gameCamera));
+  gameScene.overrideMaterial = null;
+
+  // Same shader, a quarter of the pixels. Passing here would mean the budget
+  // being blown is per-fragment rather than per-shader.
+  {
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+    const dpr = renderer.getPixelRatio();
+    renderer.setPixelRatio(dpr / 2);
+    renderer.setSize(w, h, false);
+    gameScene.overrideMaterial = stdOverride;
+    run('full: standard @ half res', () => renderer.render(gameScene, gameCamera));
+    gameScene.overrideMaterial = null;
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(w, h, false);
   }
 
   // Same scene rendered twice back to back. Identical results mean the failure

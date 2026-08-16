@@ -13,10 +13,10 @@ import {
   Group,
   IcosahedronGeometry,
   Mesh,
-  MeshStandardMaterial,
   Quaternion,
   Vector3,
 } from 'three';
+import { type LitMaterial, makeLit } from '../render/litMaterial';
 import { clamp01, damp, elasticOut, lerp } from '../core/Math';
 import { Growth } from './Growth';
 
@@ -42,7 +42,7 @@ export class Ball {
   visualRadius = this.growth.radius;
 
   private core: Mesh;
-  private coreMat: MeshStandardMaterial;
+  private coreMat: LitMaterial;
   private spin = new Quaternion();
   private axis = new Vector3();
   private squash = 0;
@@ -59,7 +59,7 @@ export class Ball {
     // perfectly smooth surface.
     const geo = new IcosahedronGeometry(1, 2);
     geo.computeVertexNormals();
-    this.coreMat = new MeshStandardMaterial({
+    this.coreMat = makeLit({
       color: new Color(0xf6f4ef),
       roughness: 0.55,
       metalness: 0.02,

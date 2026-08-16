@@ -20,13 +20,13 @@ import {
   LinearMipmapLinearFilter,
   Material,
   Mesh,
-  MeshStandardMaterial,
   NearestFilter,
   Object3D,
   SRGBColorSpace,
   Texture,
   TextureLoader,
 } from 'three';
+import { type LitMaterial, makeLit } from '../render/litMaterial';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CHARACTER_HEIGHT, KIT_MATERIAL, KIT_SCALE, type KitId } from '../data/props';
@@ -61,7 +61,7 @@ const _white = new Color(1, 1, 1);
 export class Assets {
   private gltf = new GLTFLoader();
   private tex = new TextureLoader();
-  private materials = new Map<string, MeshStandardMaterial>();
+  private materials = new Map<string, LitMaterial>();
   private textures = new Map<string, Texture>();
   private models = new Map<string, LoadedModel>();
   private inflight = new Map<string, Promise<LoadedModel>>();
@@ -88,12 +88,12 @@ export class Assets {
   }
 
   /** One material per kit (or per character texture). */
-  material(kit: KitId, textureUrl?: string): MeshStandardMaterial {
+  material(kit: KitId, textureUrl?: string): LitMaterial {
     if (KIT_MATERIAL[kit] === 'vertexColor') {
       const key = `vc:${kit}`;
       let vc = this.materials.get(key);
       if (!vc) {
-        vc = new MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 });
+        vc = makeLit({ vertexColors: true, roughness: 0.78, metalness: 0 });
         this.materials.set(key, vc);
       }
       return vc;
@@ -102,7 +102,7 @@ export class Assets {
     const url = textureUrl ?? KIT_TEXTURE[kit];
     let m = this.materials.get(url);
     if (!m) {
-      m = new MeshStandardMaterial({
+      m = makeLit({
         map: this.texture(url),
         roughness: 0.72,
         metalness: 0.0,
@@ -112,7 +112,7 @@ export class Assets {
     return m;
   }
 
-  allMaterials(): MeshStandardMaterial[] {
+  allMaterials(): LitMaterial[] {
     return [...this.materials.values()];
   }
 
@@ -170,7 +170,7 @@ export class Assets {
             // the whole model collapses to one geometry sharing one material.
             // glTF baseColorFactor is already linear, which is what three's
             // vertex-colour path expects — no conversion.
-            const src = mesh.material as MeshStandardMaterial;
+            const src = mesh.material as LitMaterial;
             const c = src?.color ?? _white;
             const arr = new Float32Array(n * 3);
             for (let i = 0; i < n; i++) {
