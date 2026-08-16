@@ -24,7 +24,9 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshDepthMaterial,
   MeshLambertMaterial,
+  MeshNormalMaterial,
   MeshStandardMaterial,
   OrthographicCamera,
   PerspectiveCamera,
@@ -323,65 +325,64 @@ export function runSelfTest(
   restore();
   run('game scene, no shadows', () => renderer.render(gameScene, gameCamera));
 
-  // The lit path draws black where the basic path is perfect, so the fault is
-  // in what MeshStandardMaterial compiles to for *this* scene. The passing
-  // 'lit box' test differs from the game scene in exactly three ways — the
-  // hemisphere light, the fog, and the atlas materials — so each is removed in
-  // turn. Whichever removal makes the frame come back is the ingredient.
-  const stdOverride = new MeshStandardMaterial({ color: 0xbb9966 });
-
+  // Basic passes at 251k triangles while every lit material fails past ~16k,
+  // and neither a cheaper shader nor a quarter of the pixels helps. That rules
+  // out fragment cost and points at the vertex stage: on a tile-based GPU the
+  // varyings for every triangle are spooled into a fixed per-tile parameter
+  // buffer, and overflowing it drops whole tiles — which is what black frames
+  // with hard-edged wedges of correct city actually are.
+  //
+  // Basic emits vUv and vFogDepth. Every lit material also emits vNormal and
+  // vViewPosition. This ladder separates the two candidate causes — the extra
+  // varyings, or the lights themselves — because they need opposite fixes.
   gameScene.overrideMaterial = new MeshBasicMaterial({ color: 0xdd4488 });
-  run('full: basic override', () => renderer.render(gameScene, gameCamera));
+  run('full: basic (2 varyings)', () => renderer.render(gameScene, gameCamera));
 
-  gameScene.overrideMaterial = stdOverride;
-  run('full: standard override', () => renderer.render(gameScene, gameCamera));
+  // No lights at all, and almost no varyings. If this passes it confirms the
+  // budget is in what the vertex stage emits rather than in lighting.
+  gameScene.overrideMaterial = new MeshDepthMaterial();
+  run('full: depth (no varyings)', () => renderer.render(gameScene, gameCamera));
+
+  // Normals, but no lights whatsoever. This is the decisive one: a failure
+  // here means the normal varyings alone are enough, and lighting is innocent.
+  gameScene.overrideMaterial = new MeshNormalMaterial();
+  run('full: normal (normals, no lights)', () => renderer.render(gameScene, gameCamera));
   gameScene.overrideMaterial = null;
 
-  const savedFog = gameScene.fog;
-  gameScene.fog = null;
-  run('full: no fog', () => renderer.render(gameScene, gameCamera));
-  gameScene.fog = savedFog;
-
-  const hemi = kids.find((k) => k.type === 'HemisphereLight');
-  if (hemi) {
-    hemi.visible = false;
-    run('full: no hemisphere light', () => renderer.render(gameScene, gameCamera));
-    hemi.visible = true;
-  }
-
-  const dirLight = kids.find((k) => k.type === 'DirectionalLight');
-  if (dirLight) {
-    dirLight.visible = false;
-    run('full: no directional light', () => renderer.render(gameScene, gameCamera));
-    dirLight.visible = true;
-  }
-
-  // Cheaper lit shaders on the identical scene. If Lambert draws where Standard
-  // is black, fragment cost is confirmed as the axis and the fix is real rather
-  // than a coincidence.
+  // A lit material with the scene's own lights replaced by a single ambient —
+  // the cheapest lighting that exists. Passing would move the fault onto the
+  // hemisphere/shadow-casting lights instead of the varyings.
+  const sceneLights = kids.filter((k) => /Light/.test(k.type));
+  const litVis = sceneLights.map((l) => l.visible);
+  for (const l of sceneLights) l.visible = false;
+  const amb = new AmbientLight(0xffffff, 2);
+  gameScene.add(amb);
   gameScene.overrideMaterial = new MeshLambertMaterial({ color: 0xbb9966 });
-  run('full: lambert override', () => renderer.render(gameScene, gameCamera));
+  run('full: lambert + ambient only', () => renderer.render(gameScene, gameCamera));
   gameScene.overrideMaterial = null;
+  gameScene.remove(amb);
+  for (let i = 0; i < sceneLights.length; i++) sceneLights[i].visible = litVis[i];
 
-  // Same shader, a quarter of the pixels. Passing here would mean the budget
-  // being blown is per-fragment rather than per-shader.
-  {
-    const w = renderer.domElement.clientWidth;
-    const h = renderer.domElement.clientHeight;
-    const dpr = renderer.getPixelRatio();
-    renderer.setPixelRatio(dpr / 2);
-    renderer.setSize(w, h, false);
-    gameScene.overrideMaterial = stdOverride;
-    run('full: standard @ half res', () => renderer.render(gameScene, gameCamera));
-    gameScene.overrideMaterial = null;
-    renderer.setPixelRatio(dpr);
-    renderer.setSize(w, h, false);
+  // How much geometry the lit path survives, measured rather than guessed. The
+  // buildings group is chunked, so revealing chunks one at a time walks the
+  // triangle count up until the frame drops — and the last passing figure is
+  // the budget any fix has to fit inside.
+  const buildings = cityKids.find((k) => k.name === 'buildings');
+  if (buildings) {
+    const chunks = buildings.children.slice();
+    only(['city', 'buildings']);
+    for (const n of [1, 2, 4, 8, chunks.length]) {
+      if (n > chunks.length) continue;
+      chunks.forEach((c, i) => (c.visible = i < n));
+      run(`lit budget: ${n}/${chunks.length} chunks`, () =>
+        renderer.render(gameScene, gameCamera)
+      );
+    }
+    for (const c of chunks) c.visible = true;
+    restore();
   }
 
-  // Same scene rendered twice back to back. Identical results mean the failure
-  // is deterministic; differing ones confirm it is timing or driver state.
-  run('full: repeat A', () => renderer.render(gameScene, gameCamera));
-  run('full: repeat B', () => renderer.render(gameScene, gameCamera));
+
 
   renderer.shadowMap.enabled = true;
   run('game scene, shadows on', () => renderer.render(gameScene, gameCamera));
