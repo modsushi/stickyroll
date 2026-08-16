@@ -437,6 +437,63 @@ export function runSelfTest(
     run(`game: ${part}`, () => renderer.render(gameScene, gameCamera));
   }
 
+  // De-instancing test — the one that decides the fix.
+  //
+  // Every probe above passes in a bare scene, yet a single instanced building
+  // chunk fails inside the game scene, while the non-instanced ground passes
+  // and every basic-material pass succeeds. That points at instanced draws
+  // whose shader reads the normal attribute. Here the exact same buildings are
+  // rebuilt as ordinary meshes at the same transforms, with the same material,
+  // in the same scene. If this draws where the instanced version is black, the
+  // fix is to bake static scenery into merged geometry instead of instancing
+  // it — a real change worth making rather than another shader guess.
+  const buildingsForDeinst = cityKids.find((k) => k.name === 'buildings');
+  if (buildingsForDeinst) {
+    const sources: InstancedMesh[] = [];
+    buildingsForDeinst.traverse((o) => {
+      const im = o as InstancedMesh;
+      if (im.isInstancedMesh) sources.push(im);
+    });
+
+    const plain = new Group();
+    plain.name = 'deinstanced';
+    const tmp = new Matrix4();
+    let made = 0;
+    // Capped: this is a diagnostic, and thousands of individual meshes would
+    // measure allocation cost rather than the thing under test.
+    for (const im of sources) {
+      for (let i = 0; i < im.count && made < 400; i++) {
+        im.getMatrixAt(i, tmp);
+        const mesh = new Mesh(im.geometry, im.material);
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(tmp);
+        // Culling is switched off and the world matrices are forced: an
+        // instanced mesh carries its own combined bounds, and the per-instance
+        // copies would otherwise be rejected before they ever reach the driver.
+        mesh.frustumCulled = false;
+        plain.add(mesh);
+        made++;
+      }
+    }
+
+    only(['city', 'buildings']);
+    for (const im of sources) im.visible = false;
+    buildingsForDeinst.add(plain);
+    plain.updateMatrixWorld(true);
+    run(
+      'buildings: de-instanced, lit',
+      () => renderer.render(gameScene, gameCamera),
+      `${made} plain meshes`
+    );
+    buildingsForDeinst.remove(plain);
+    for (const im of sources) im.visible = true;
+
+    // The instanced original, drawn immediately after, as the control.
+    run('buildings: instanced, lit (control)', () =>
+      renderer.render(gameScene, gameCamera)
+    );
+  }
+
   // The same failing geometry drawn with the simplest material there is. If a
   // layer still blackens the frame here, the vertex data is at fault; if it
   // suddenly draws, the geometry is fine and the lit material's state is not.
