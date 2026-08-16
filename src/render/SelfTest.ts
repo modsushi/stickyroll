@@ -38,6 +38,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { MeshBatch } from './Batch';
 
 export interface SelfTestStep {
   name: string;
@@ -65,6 +66,26 @@ function sample(gl: WebGLRenderingContext | WebGL2RenderingContext): number {
     if (px[0] + px[1] + px[2] > 24) lit++;
   }
   return lit;
+}
+
+/** Cheap hash of a coarse pixel grid, for spotting that a frame changed. */
+function fingerprint(gl: WebGLRenderingContext | WebGL2RenderingContext): number {
+  const w = gl.drawingBufferWidth;
+  const h = gl.drawingBufferHeight;
+  const px = new Uint8Array(4);
+  let hash = 2166136261;
+  for (let gy = 1; gy < 8; gy++) {
+    for (let gx = 1; gx < 8; gx++) {
+      gl.readPixels(
+        Math.floor((w * gx) / 8), Math.floor((h * gy) / 8),
+        1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px
+      );
+      hash = ((hash ^ px[0]) * 16777619) >>> 0;
+      hash = ((hash ^ px[1]) * 16777619) >>> 0;
+      hash = ((hash ^ px[2]) * 16777619) >>> 0;
+    }
+  }
+  return hash;
 }
 
 export function runSelfTest(
@@ -492,6 +513,52 @@ export function runSelfTest(
     run('buildings: instanced, lit (control)', () =>
       renderer.render(gameScene, gameCamera)
     );
+  }
+
+  // Absorbing a prop hides it. On the instanced path that means writing a
+  // zero-scale matrix; on the merged path it means collapsing that prop's
+  // vertex range in a shared buffer, which is easy to get subtly wrong — a
+  // wrong offset would erase a neighbour, or nothing at all. This renders the
+  // props layer, hides every slot, renders again, and checks the picture
+  // actually emptied.
+  {
+    const propsGroup = gameScene.getObjectByName('props');
+    const batches: MeshBatch[] = [];
+    propsGroup?.traverse((o) => {
+      if (o instanceof MeshBatch) batches.push(o);
+    });
+    const merged = batches.filter((b) => b.mode !== 'instanced');
+    if (propsGroup && merged.length) {
+      only(['city', 'props']);
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(0x000000, 1);
+      renderer.clear();
+      renderer.render(gameScene, gameCamera);
+      const before = fingerprint(gl);
+
+      let hidden = 0;
+      for (const b of merged) {
+        for (let i = 0; i < b.visibleCount; i++) {
+          b.hideAt(i);
+          hidden++;
+        }
+      }
+
+      // Sky-blue background means "everything hidden" reads as a high score,
+      // so this asserts the picture *changed*, not that it went dark.
+      renderer.clear();
+      renderer.render(gameScene, gameCamera);
+      const after = fingerprint(gl);
+      // Sky and ground stay lit behind the props, so counting lit points cannot
+      // see this change; the picture itself has to be compared.
+      steps.push({
+        name: 'merged hide (absorb)',
+        lit: hidden === 0 || before !== after ? 9 : 0,
+        of: 9,
+        note: `${merged.length} merged batches, ${hidden} hidden, sig ${before}->${after}`,
+      });
+      restore();
+    }
   }
 
   // The same failing geometry drawn with the simplest material there is. If a

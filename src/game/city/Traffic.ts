@@ -8,10 +8,11 @@
  * eating a car that was driving away from you is one of the best moments in the
  * game.
  *
- * One InstancedMesh per car model keeps all traffic at ~6 draw calls.
+ * One MeshBatch per car model keeps all traffic at ~6 draw calls.
  */
 
-import { DynamicDrawUsage, Group, InstancedMesh, Matrix4, Object3D, Vector3 } from 'three';
+import { Group, Object3D, Vector3 } from 'three';
+import { MeshBatch, batchMode } from '../../render/Batch';
 import { assets } from '../../core/Assets';
 import { Rand, clamp01, dampAngle, lerp } from '../../core/Math';
 import { PROPS, type PropDef } from '../../data/props';
@@ -21,7 +22,6 @@ import type { Ball } from '../Ball';
 import type { BuiltCity } from './CityBuilder';
 import type { PropInstance } from './Props';
 
-const ZERO = new Matrix4().makeScale(0, 0, 0);
 const _o = new Object3D();
 
 interface Car extends PropInstance {
@@ -32,7 +32,7 @@ interface Car extends PropInstance {
   targetSpeed: number;
   heading: number;
   slot: number;
-  mesh: InstancedMesh;
+  mesh: MeshBatch;
   hornCooldown: number;
   /** Lateral offset from the lane centre — puts cars in the right-hand lane. */
   offset: number;
@@ -59,7 +59,7 @@ export class Traffic {
 
   readonly group = new Group();
   private cars: Car[] = [];
-  private meshes = new Map<string, { mesh: InstancedMesh; used: number }>();
+  private meshes = new Map<string, { mesh: MeshBatch; used: number }>();
   private rand = new Rand(0x51ee7);
 
   constructor(
@@ -91,7 +91,7 @@ export class Traffic {
       return { pts, cum, length: total, speed: spec.speed, loop: spec.loop ?? true };
     });
 
-    // Count per model first so each InstancedMesh is sized exactly.
+    // Count per model first so each MeshBatch is sized exactly.
     const picks: { def: PropDef; lane: Lane; s: number }[] = [];
     lanes.forEach((lane, li) => {
       const spec = L.lanes[li];
@@ -110,10 +110,8 @@ export class Traffic {
     for (const [model, count] of counts) {
       if (!assets.has('cars', model)) continue;
       const src = assets.get('cars', model);
-      const mesh = new InstancedMesh(src.geometry, src.material, count);
-      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      const mesh = new MeshBatch(src.geometry, src.material, count, batchMode(true));
+      mesh.setShadows(true, true);
       // Bounds are recomputed each frame from the live instances (see render),
       // so traffic is culled like anything else instead of being drawn from
       // across the district every frame.
@@ -139,10 +137,7 @@ export class Traffic {
         absorbed: false,
         geometry: assets.get('cars', p.def.model).geometry,
         material: assets.get('cars', p.def.model).material,
-        hide: () => {
-          entry.mesh.setMatrixAt(slot, ZERO);
-          entry.mesh.instanceMatrix.needsUpdate = true;
-        },
+        hide: () => entry.mesh.hideAt(slot),
         lane: p.lane,
         s: p.s,
         speed: p.lane.speed,
@@ -249,7 +244,6 @@ export class Traffic {
       car.mesh.setMatrixAt(car.slot, _o.matrix);
     }
     for (const { mesh } of this.meshes.values()) {
-      mesh.instanceMatrix.needsUpdate = true;
       // Cars move, so their batch bounds go stale immediately. Recomputing is
       // cheap at this count and is what lets the renderer reject off-screen
       // traffic in both the colour and shadow passes.

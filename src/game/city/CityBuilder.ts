@@ -19,13 +19,13 @@ import {
   BufferGeometry,
   Color,
   Group,
-  InstancedMesh,
   Matrix4,
   Mesh,
   PlaneGeometry,
   Quaternion,
   Vector3,
 } from 'three';
+import { MeshBatch } from '../../render/Batch';
 import { makeLit } from '../../render/litMaterial';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { assets } from '../../core/Assets';
@@ -187,7 +187,7 @@ export class CityBuilder {
 
     // Buildings whose model is in the prop catalog are absorbable at the top
     // tiers, so they join the scattered props; the rest are pure scenery. Both
-    // sets are planned before a single allocate() so every InstancedMesh is
+    // sets are planned before a single allocate() so every batch is
     // sized exactly once.
     const buildings = this.planBuildings();
     const scenery = this.splitBuildings(buildings);
@@ -438,7 +438,7 @@ export class CityBuilder {
     const g = new Group();
     g.name = 'roads';
 
-    // Bucket cells by model so each becomes one InstancedMesh.
+    // Bucket cells by model so each becomes one batch.
     const buckets = new Map<string, { x: number; z: number; turns: number }[]>();
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.cols; x++) {
@@ -457,16 +457,16 @@ export class CityBuilder {
     for (const [model, cells] of buckets) {
       if (!assets.has('roads', model)) continue;
       const src = assets.get('roads', model);
-      const mesh = new InstancedMesh(src.geometry, src.material, cells.length);
-      mesh.receiveShadow = true;
-      mesh.castShadow = false; // flat tiles casting shadows is pure cost
+      const mesh = new MeshBatch(src.geometry, src.material, cells.length);
+      // flat tiles casting shadows is pure cost
+      mesh.setShadows(false, true);
       cells.forEach((cell, i) => {
         _p.set(cell.x, 0, cell.z);
         _q.setFromAxisAngle(UP, (-cell.turns * Math.PI) / 2);
         _m.compose(_p, _q, _s);
         mesh.setMatrixAt(i, _m);
       });
-      mesh.instanceMatrix.needsUpdate = true;
+      mesh.build();
       mesh.computeBoundingSphere();
       g.add(mesh);
     }

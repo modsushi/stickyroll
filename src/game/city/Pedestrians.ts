@@ -13,7 +13,7 @@
  *     (legL, legR, upper) animated procedurally off a single speed parameter.
  *     Blending continuously beats cross-fading clips here — it is what lets
  *     someone shift from a stroll to a dead sprint as the ball closes in.
- *  2. Those three parts are drawn as **InstancedMesh**, three per variant, with
+ *  2. Those three parts are drawn as **MeshBatch**, three per variant, with
  *     the per-person matrices rewritten each frame. A crowd therefore costs a
  *     fixed ~21 draw calls whether it is twenty people or two hundred, which is
  *     what makes a genuinely busy street affordable.
@@ -24,15 +24,14 @@
 
 import {
   BufferGeometry,
-  DynamicDrawUsage,
   Euler,
   Group,
-  InstancedMesh,
   Matrix4,
   Mesh,
   Quaternion,
   Vector3,
 } from 'three';
+import { MeshBatch, batchMode } from '../../render/Batch';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { assets } from '../../core/Assets';
 import { Rand, TAU, clamp01, dampAngle } from '../../core/Math';
@@ -65,7 +64,7 @@ interface Rig {
   /** Height of the hip joint; the rig's parts pivot about it. */
   hipY: number;
   material: Mesh['material'];
-  meshes?: { legL: InstancedMesh; legR: InstancedMesh; upper: InstancedMesh };
+  meshes?: { legL: MeshBatch; legR: MeshBatch; upper: MeshBatch };
   used: number;
 }
 
@@ -177,7 +176,7 @@ export class Pedestrians {
     }
     if (!cells.length) return;
 
-    // Count per rig first so each InstancedMesh is sized exactly.
+    // Count per rig first so each MeshBatch is sized exactly.
     const assignments: number[] = [];
     for (let i = 0; i < L.pedestrians; i++) {
       const r = i % this.rigs.length;
@@ -186,11 +185,9 @@ export class Pedestrians {
     }
     for (const rig of this.rigs) {
       const mk = (geo: BufferGeometry) => {
-        const m = new InstancedMesh(geo, rig.material, Math.max(1, rig.used));
-        m.instanceMatrix.setUsage(DynamicDrawUsage);
-        m.castShadow = true;
-        m.receiveShadow = false;
-        m.frustumCulled = false; // the crowd spans the district
+        const m = new MeshBatch(geo, rig.material, Math.max(1, rig.used), batchMode(true));
+        m.setShadows(true, false);
+        m.setCulling(false); // the crowd spans the district
         this.group.add(m);
         return m;
       };
@@ -368,12 +365,6 @@ export class Pedestrians {
       m.upper.setMatrixAt(p.slot, _out.multiplyMatrices(_root, _part));
     }
 
-    for (const rig of this.rigs) {
-      if (!rig.meshes) continue;
-      rig.meshes.legL.instanceMatrix.needsUpdate = true;
-      rig.meshes.legR.instanceMatrix.needsUpdate = true;
-      rig.meshes.upper.instanceMatrix.needsUpdate = true;
-    }
     void dt;
   }
 

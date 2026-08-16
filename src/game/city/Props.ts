@@ -1,7 +1,7 @@
 /**
  * Static absorbable props.
  *
- * Props of the same model share InstancedMeshes, but batches are **chunked
+ * Props of the same model share one batch, but batches are **chunked
  * spatially** rather than being one batch per model across the whole level.
  * A single map-wide batch has a map-wide bounding sphere, which means the GPU
  * draws all four thousand props every frame — twice, once for the shadow pass —
@@ -15,15 +15,14 @@
 
 import {
   BufferGeometry,
-  DynamicDrawUsage,
   Euler,
   Group,
-  InstancedMesh,
   Material,
   Matrix4,
   Quaternion,
   Vector3,
 } from 'three';
+import { MeshBatch } from '../../render/Batch';
 import { assets } from '../../core/Assets';
 import type { PropDef } from '../../data/props';
 import type { HashItem } from '../SpatialHash';
@@ -46,7 +45,6 @@ const _p = new Vector3();
 const _q = new Quaternion();
 const _e = new Euler();
 const _s = new Vector3();
-const ZERO = new Matrix4().makeScale(0, 0, 0);
 
 export interface PropInstance extends HashItem {
   def: PropDef;
@@ -67,12 +65,12 @@ export interface PropInstance extends HashItem {
   /** Geometry handed to the baker when absorbed. */
   geometry: BufferGeometry;
   material: Material;
-  /** Collapses this instance in its InstancedMesh. */
+  /** Collapses this instance in its batch. */
   hide: () => void;
 }
 
 interface Batch {
-  mesh: InstancedMesh;
+  mesh: MeshBatch;
   used: number;
 }
 
@@ -93,7 +91,7 @@ export class Props {
     return `${def.kit}/${def.model}#${chunkKey(x, z)}`;
   }
 
-  /** Two-pass build: count first so each InstancedMesh is sized exactly. */
+  /** Two-pass build: count first so each batch is sized exactly. */
   reserve(def: PropDef, x: number, z: number) {
     const k = this.key(def, x, z);
     this.counts.set(k, (this.counts.get(k) ?? 0) + 1);
@@ -105,10 +103,9 @@ export class Props {
       const [path] = key.split('#');
       const [kit, model] = path.split('/');
       const src = assets.get(kit as PropDef['kit'], model);
-      const mesh = new InstancedMesh(src.geometry, src.material, count);
-      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-      mesh.receiveShadow = true;
-      mesh.count = 0;
+      const mesh = new MeshBatch(src.geometry, src.material, count);
+      mesh.setShadows(false, true);
+      mesh.visibleCount = 0;
       this.group.add(mesh);
       this.batches.set(key, { mesh, used: 0 });
     }
@@ -122,8 +119,10 @@ export class Props {
     const src = assets.get(def.kit, def.model);
     const scale = (def.scale ?? 1) * scaleMul;
     const slot = batch.used++;
-    batch.mesh.count = batch.used;
-    batch.mesh.castShadow = def.absorbSize >= SHADOW_MIN_SIZE;
+    batch.mesh.visibleCount = batch.used;
+    // Shadow casting is a per-batch flag, so the batch casts if anything in it
+    // is big enough to be worth it.
+    if (def.absorbSize >= SHADOW_MIN_SIZE) batch.mesh.setShadows(true, true);
 
     _p.set(x, 0, z);
     _e.set(0, rotY, 0);
@@ -131,7 +130,6 @@ export class Props {
     _s.setScalar(scale);
     _m.compose(_p, _q, _s);
     batch.mesh.setMatrixAt(slot, _m);
-    batch.mesh.instanceMatrix.needsUpdate = true;
 
     const inst: PropInstance = {
       def,
@@ -145,10 +143,7 @@ export class Props {
       absorbed: false,
       geometry: src.geometry,
       material: src.material,
-      hide: () => {
-        batch.mesh.setMatrixAt(slot, ZERO);
-        batch.mesh.instanceMatrix.needsUpdate = true;
-      },
+      hide: () => batch.mesh.hideAt(slot),
     };
     this.all.push(inst);
     return inst;
@@ -156,13 +151,15 @@ export class Props {
 
   /**
    * Computes per-batch bounds once placement is done. Without this every
-   * InstancedMesh keeps the *source model's* bounding sphere, which sits at the
+   * a batch keeps the *source model's* bounding sphere, which sits at the
    * origin and makes culling reject batches that are plainly on screen.
    */
   finalize() {
     for (const b of this.batches.values()) {
+      // build() bakes a merged batch; computeBoundingSphere covers both paths.
+      b.mesh.build();
       b.mesh.computeBoundingSphere();
-      b.mesh.frustumCulled = true;
+      b.mesh.setCulling(true);
     }
   }
 
@@ -221,9 +218,9 @@ export function chunkedScenery(
   for (const [bucketKey, list] of buckets) {
     const [kit, model] = bucketKey.split('#')[0].split('/');
     const src = assets.get(kit as PropDef['kit'], model);
-    const mesh = new InstancedMesh(src.geometry, src.material, list.length);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    const mesh = new MeshBatch(src.geometry, src.material, list.length);
+    mesh.setShadows(true, true);
+    mesh.visibleCount = list.length;
     list.forEach((b, i) => {
       o.set(b.x, 0, b.z);
       _e.set(0, b.rotY, 0);
@@ -232,9 +229,9 @@ export function chunkedScenery(
       _m.compose(o, _q, _s);
       mesh.setMatrixAt(i, _m);
     });
-    mesh.instanceMatrix.needsUpdate = true;
+    mesh.build();
     mesh.computeBoundingSphere();
-    mesh.frustumCulled = true;
+    mesh.setCulling(true);
     group.add(mesh);
   }
   return { group, batches: buckets.size };

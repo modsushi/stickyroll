@@ -1,26 +1,17 @@
 /**
- * The one place that decides which lit shader the game compiles to.
+ * Selects the lit shader the game compiles to.
  *
- * Chrome on Android drives Samsung's GPU through ANGLE's Vulkan backend, and on
- * that path a full scene of `MeshStandardMaterial` intermittently loses whole
- * tiles: completed tiles show correct city, dropped ones come back black, and
- * because the dropped tiles take the clear with them the sky disappears too.
- * The result is a black screen flickering hard-edged wedges of the real game.
+ * This was added to chase an Android black screen on the theory that
+ * `MeshStandardMaterial`'s fragment cost was the trigger. That theory was
+ * wrong: on-device testing showed Lambert failing identically, and a quarter of
+ * the pixels making no difference. The real cause was instanced draws reading
+ * normals — see `Batch.ts`.
  *
- * This was isolated on-device with `?selftest=1`, which rendered the identical
- * scene — same 86 draw calls, same 251k triangles, same camera — twice:
- *
- *   PASS 9/9  full: basic override      [86 calls, 251k tris]
- *   FAIL 0/9  full: standard override   [86 calls, 251k tris]
- *
- * Geometry, instancing, fog, and both lights were each ruled out separately.
- * Fragment cost is the only axis left, so the city uses Lambert on touch
- * devices. Every kit material is `metalness: 0` with high roughness — purely
- * diffuse — so Lambert is visually near-identical here and dramatically
- * cheaper; the ACES grade and bloom do the work that PBR is not doing.
- *
- * `?lit=standard` forces PBR back on for comparison, `?lit=lambert` forces it
- * off on desktop.
+ * The switch is kept because it is genuinely useful (every kit material is
+ * `metalness: 0` with high roughness, so Lambert is near-identical here and
+ * cheaper), but it no longer changes any default: both platforms get PBR unless
+ * `?lit=lambert` asks otherwise. Defaults should not carry the residue of a
+ * disproven diagnosis.
  */
 
 import {
@@ -49,8 +40,7 @@ function detectMode(): LitMode {
     typeof location === 'undefined' ? '' : location.search
   );
   if (forced) return forced[1] as LitMode;
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return coarse ? 'lambert' : 'standard';
+  return 'standard';
 }
 
 export const litMode: LitMode = detectMode();
