@@ -83,13 +83,27 @@ export function runSelfTest(
     try {
       draw();
       const r = renderer.info.render;
+      const lit = sample(gl);
+      // On a failure, the actual colour matters: pure 0,0,0 means something
+      // painted black over the frame, while a dark non-zero means it drew and
+      // came out wrong.
+      let extra = note;
+      if (lit < 9) {
+        const px = new Uint8Array(4);
+        gl.readPixels(
+          Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2),
+          1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px
+        );
+        const rgb = `mid rgb ${px[0]},${px[1]},${px[2]}`;
+        extra = note ? `${note} · ${rgb}` : rgb;
+      }
       steps.push({
         name,
-        lit: sample(gl),
+        lit,
         of: 9,
         calls: r.calls,
         tris: Math.round(r.triangles / 1000),
-        note,
+        note: extra,
       });
     } catch (e) {
       steps.push({ name, lit: 0, of: 9, note: `threw: ${(e as Error).message}` });
@@ -186,6 +200,57 @@ export function runSelfTest(
     steps.push({ name: 'textured box (game atlas)', lit: 0, of: 9, note: 'no atlas found' });
   }
 
+  // 6c. Non-finite vertex data is the other way to get triangles that cover the
+  // whole viewport: a NaN or Inf position has no valid clip space, and drivers
+  // disagree completely about what to do with it — desktop GPUs discard the
+  // triangle, mobile ones happily rasterise a wedge across the screen. This is
+  // device-independent, so a failure here is reproducible anywhere.
+  {
+    let badGeo = 0;
+    let badMat = 0;
+    let badSphere = 0;
+    let first = '';
+    gameScene.traverse((o) => {
+      const mesh = o as Mesh & { instanceMatrix?: { array: ArrayLike<number> }; count?: number };
+      const g = mesh.geometry;
+      if (g) {
+        const pos = g.getAttribute?.('position') as { array: ArrayLike<number> } | undefined;
+        if (pos) {
+          for (let i = 0; i < pos.array.length; i++) {
+            if (!Number.isFinite(pos.array[i])) {
+              badGeo++;
+              if (!first) first = `geo ${o.name || o.type}`;
+              break;
+            }
+          }
+        }
+        const s = g.boundingSphere;
+        if (s && (!Number.isFinite(s.radius) || !Number.isFinite(s.center.x))) {
+          badSphere++;
+          if (!first) first = `sphere ${o.name || o.type}`;
+        }
+      }
+      if (mesh.instanceMatrix) {
+        const a = mesh.instanceMatrix.array;
+        const n = Math.min(a.length, (mesh.count ?? 0) * 16);
+        for (let i = 0; i < n; i++) {
+          if (!Number.isFinite(a[i])) {
+            badMat++;
+            if (!first) first = `matrix ${o.name || o.type}`;
+            break;
+          }
+        }
+      }
+    });
+    const bad = badGeo + badMat + badSphere;
+    steps.push({
+      name: 'finite vertex data',
+      lit: bad === 0 ? 9 : 0,
+      of: 9,
+      note: `geo ${badGeo} matrices ${badMat} spheres ${badSphere}${first ? ` first: ${first}` : ''}`,
+    });
+  }
+
   // ── the real scene, taken apart ─────────────────────────────────────────
   // A draw-call count of 0 means everything was culled; a healthy count with a
   // black frame means it drew and the pixels came out black. Those are entirely
@@ -223,6 +288,17 @@ export function runSelfTest(
     if (!cityKids.some((k) => k.name === part)) continue;
     only(['city', part]);
     run(`game: ${part}`, () => renderer.render(gameScene, gameCamera));
+  }
+
+  // The same failing geometry drawn with the simplest material there is. If a
+  // layer still blackens the frame here, the vertex data is at fault; if it
+  // suddenly draws, the geometry is fine and the lit material's state is not.
+  for (const part of ['props', 'buildings', 'surround']) {
+    if (!cityKids.some((k) => k.name === part)) continue;
+    only(['city', part]);
+    gameScene.overrideMaterial = new MeshBasicMaterial({ color: 0xdd4488 });
+    run(`game: ${part} (basic mat)`, () => renderer.render(gameScene, gameCamera));
+    gameScene.overrideMaterial = null;
   }
 
   restore();
