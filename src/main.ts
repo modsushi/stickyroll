@@ -20,6 +20,7 @@ import { Game } from './game/Game';
 import { TIERS } from './game/Growth';
 import { detectQuality, Renderer } from './render/Renderer';
 import { PostFX } from './render/PostFX';
+import { runBench, showBench } from './render/Bench';
 import { runSelfTest, showSelfTest } from './render/SelfTest';
 import { Boot } from './ui/Boot';
 import { Collection } from './ui/Collection';
@@ -240,6 +241,15 @@ const loop = new Loop(
   await game.load((p) => boot.setProgress(p * 0.92));
   game.begin();
   paintCards();
+
+  // `?bench=1` measures the render path with gl.finish, so the numbers include
+  // GPU time rather than command submission alone.
+  if (/[?&]bench=1/.test(location.search)) {
+    loop.stop();
+    const r = runBench(renderer.renderer, renderer.scene, renderer.camera);
+    showBench(uiRoot, r, `${BUILD}\n${renderer.diagnostics().replace(/\n/g, ' | ')}`);
+    return;
+  }
 
   // `?selftest=1` bisects the render path on the device and prints the result.
   if (/[?&]selftest=1/.test(location.search)) {
