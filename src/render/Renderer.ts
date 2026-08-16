@@ -77,7 +77,14 @@ export class Renderer {
     this.maxDpr = quality === 'high' ? 2 : 1.35;
     this.dpr = Math.min(devicePixelRatio || 1, this.maxDpr);
 
-    this.camera = new PerspectiveCamera(46, 1, 0.4, 220);
+    // Near plane deliberately far out. The follow camera never sits closer than
+    // ~15 m to anything, so 5 m clips nothing — but the near/far *ratio* is what
+    // sets depth precision, and 0.4/220 spends almost the entire buffer on the
+    // first few metres. Combined with the 16-bit depth that mobile gives render
+    // targets, distant geometry collapsed into a handful of depth values and
+    // won or lost the depth test essentially at random: patches of correct city
+    // with hard rasterised edges, and the sky losing outright to black.
+    this.camera = new PerspectiveCamera(46, 1, 5, 260);
 
     // Warm key + cool sky fill is the whole lighting model. Anything more
     // fights the flat-colour atlas rather than helping it.

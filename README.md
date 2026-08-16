@@ -36,6 +36,24 @@ looks like a working game you cannot see — score ticks up, nothing is drawn.
 Pause: the bottom of the pause screen reports the GL version, GPU, quality tier
 and which render path is live (`hdr` / `ldr 8-bit` / `off`) plus any failure.
 
+**Depth precision, first.** The symptom that finally identified it was a
+screenshot showing a hard-edged, pixelated *wedge* of correctly-rendered city on
+an otherwise black screen, worsening as the ball grew. That is not an overlay and
+not a failed context — it is the depth test breaking down:
+
+* the camera ran `near = 0.4`, `far = 220`, a 550:1 ratio that spends nearly the
+  whole depth buffer on the first few metres, and
+* three.js allocates a **`DEPTH_COMPONENT16`** renderbuffer for a
+  `WebGLRenderTarget` unless you also ask for a stencil — so the moment
+  post-processing renders into a target you are on 16-bit depth. Desktop drivers
+  quietly promote that to 24-bit; mobile honours it literally.
+
+Together, distant geometry collapsed into a handful of depth values and won or
+lost the depth test at random, and the sky lost outright — hence black. The fix
+is both halves: `near = 5` (nothing is ever within 17 m of this camera) and
+`stencilBuffer: true` on the scene target, which makes three allocate
+`DEPTH24_STENCIL8`. Don't undo either.
+
 **Check the browser before the GPU.** The first real instance of this was not a
 graphics problem at all: Chrome for Android's *Auto Dark Theme for web contents*
 applies a compositor-level darkening filter to pages that have not declared a

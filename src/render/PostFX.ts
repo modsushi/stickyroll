@@ -225,7 +225,13 @@ function target(w: number, h: number, type: TextureDataType, depth = false) {
     type,
     colorSpace: LinearSRGBColorSpace,
     depthBuffer: depth,
-    stencilBuffer: false,
+    // Asking for a stencil is how you get 24-bit depth out of three: with
+    // `depthBuffer` alone it allocates a DEPTH_COMPONENT16 renderbuffer, and
+    // where desktop drivers quietly promote that to 24, mobile honours it
+    // literally. Sixteen bits is not enough depth for a city, and the failure
+    // is a scene that renders in broken wedges rather than anything as helpful
+    // as an error. The stencil itself goes unused.
+    stencilBuffer: depth,
     wrapS: ClampToEdgeWrapping,
     wrapT: ClampToEdgeWrapping,
   });
@@ -284,8 +290,15 @@ export class PostFX {
     // self-check below would catch that and step down, but only after a visible
     // black flash, and there is nothing to be gained by trying: at this flat
     // art style the 8-bit path is indistinguishable anyway.
-    const forceLdr =
-      typeof location !== 'undefined' && /[?&]ldr=1/.test(location.search);
+    const search = typeof location !== 'undefined' ? location.search : '';
+    // `?nopost=1` renders straight to the canvas, bypassing every offscreen
+    // pass — the quickest way to tell a post-processing fault from a scene one.
+    if (/[?&]nopost=1/.test(search)) {
+      this.enabled = false;
+      this.stage = 'done';
+      this.failure = 'disabled by ?nopost=1';
+    }
+    const forceLdr = /[?&]ldr=1/.test(search);
     this.hdr = !forceLdr && !isTouchDevice() && supportsHalfFloatTargets(r.renderer);
     this.targetType = this.hdr ? HalfFloatType : UnsignedByteType;
     if (!this.hdr) {
@@ -391,7 +404,10 @@ export class PostFX {
     const gl = renderer.getContext();
     const lit = this.sampleCanvas(gl);
 
-    if (lit > 0) {
+    // Require a clear majority, not a single pixel. A partially-rendered frame
+    // — a wedge of city on an otherwise black screen — lit one or two samples
+    // and was happily accepted as working.
+    if (lit >= 5) {
       this.checkLog.push(`${this.stage}: ok`);
       this.stage = 'done';
       return;
@@ -399,7 +415,7 @@ export class PostFX {
 
     // Nothing drawn. Drop to the next rung.
     if (this.stage === 'hdr') {
-      this.checkLog.push('hdr: blank -> 8-bit');
+      this.checkLog.push(`hdr: ${lit}/9 -> 8-bit`);
       this.hdr = false;
       this.targetType = UnsignedByteType;
       this.brightMat.uniforms.uThreshold.value = 0.62;
@@ -408,12 +424,12 @@ export class PostFX {
       this.resize(innerWidth, innerHeight);
       this.stage = 'ldr';
     } else if (this.stage === 'ldr') {
-      this.checkLog.push('8-bit: blank -> post off');
+      this.checkLog.push(`8-bit: ${lit}/9 -> post off`);
       this.enabled = false;
       this.failure = 'offscreen passes render blank on this GPU';
       this.stage = 'off';
     } else {
-      this.checkLog.push('no-post: blank');
+      this.checkLog.push(`no-post: ${lit}/9`);
       this.failure = 'canvas blank even without post-processing';
       this.stage = 'done';
     }
