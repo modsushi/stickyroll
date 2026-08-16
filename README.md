@@ -46,6 +46,17 @@ If the context is lost anyway, a red banner says so and `webglcontextlost` is
 handled so the browser can restore it. Force the failure with
 `canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext()`.
 
+**The renderer verifies itself by output, not by capability.** Capability probes
+lie: a Samsung/ANGLE device reported `EXT_color_buffer_float` present *and*
+`checkFramebufferStatus` COMPLETE, then rendered every offscreen pass blank. So
+`PostFX.selfCheck()` reads the frame back with `readPixels` after drawing and, if
+the canvas is blank, steps down a ladder — half-float offscreen, then 8-bit
+offscreen, then no post at all (three.js straight to the canvas). Each rung is
+re-checked. The trail shows up on the pause screen as `check  ...`.
+
+Touch devices skip the half-float rung entirely, since that is the one known to
+lie and the 8-bit path is indistinguishable at this art style.
+
 Another cause is the post-processing chain's offscreen buffers. Rendering
 *into* a half-float texture needs `EXT_color_buffer_float` (WebGL2) or
 `EXT_color_buffer_half_float` (WebGL1), and plenty of Android GPUs expose

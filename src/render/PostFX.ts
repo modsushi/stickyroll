@@ -33,6 +33,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { isTouchDevice } from './Renderer';
 import type { Quality } from './Renderer';
 import type { Renderer } from './Renderer';
 
@@ -252,11 +253,23 @@ export class PostFX {
   enabled = true;
   /** Storage type actually used for the offscreen passes. */
   private targetType: TextureDataType = HalfFloatType;
-  /** True when the device forced us onto 8-bit targets. Surfaced in the HUD. */
-  readonly hdr: boolean;
+  /** True while the offscreen passes are half-float. Surfaced in the HUD. */
+  hdr: boolean;
   private verified = false;
   /** Set when the offscreen path had to be abandoned; shown in diagnostics. */
   failure: string | null = null;
+
+  // ── output self-check ────────────────────────────────────────────────────
+  // Capability probes lie. On at least one Samsung/ANGLE driver every check
+  // passes — the extension is present, the framebuffer reports COMPLETE — and
+  // the half-float passes still render nothing, which is a black screen with a
+  // perfectly healthy game behind it. So the only trustworthy test is the
+  // output itself: draw some frames, read the pixels back, and step the chain
+  // down until something actually appears.
+  private frames = 0;
+  private stage: 'hdr' | 'ldr' | 'off' | 'done' = 'hdr';
+  /** Human-readable trail of what was tried, shown in diagnostics. */
+  checkLog: string[] = [];
 
   constructor(
     private r: Renderer,
@@ -264,10 +277,20 @@ export class PostFX {
   ) {
     this.fsScene.add(this.quad);
 
+    // Mobile never starts on the half-float rung.
+    //
+    // A Samsung/ANGLE device passed every check going — extension present,
+    // framebuffer COMPLETE — and still rendered the offscreen passes blank. The
+    // self-check below would catch that and step down, but only after a visible
+    // black flash, and there is nothing to be gained by trying: at this flat
+    // art style the 8-bit path is indistinguishable anyway.
     const forceLdr =
       typeof location !== 'undefined' && /[?&]ldr=1/.test(location.search);
-    this.hdr = !forceLdr && supportsHalfFloatTargets(r.renderer);
+    this.hdr = !forceLdr && !isTouchDevice() && supportsHalfFloatTargets(r.renderer);
     this.targetType = this.hdr ? HalfFloatType : UnsignedByteType;
+    if (!this.hdr) {
+      this.stage = 'ldr'; // skip the rung we already know not to trust
+    }
 
     this.brightMat = new ShaderMaterial({
       vertexShader: VERT,
@@ -343,6 +366,78 @@ export class PostFX {
     // The tilt-shift blur is separate and lower-res still; it's only ever seen
     // through a heavy mix so resolution genuinely doesn't matter.
     this.soft = target(Math.max(1, pw >> 2), Math.max(1, ph >> 2), this.targetType);
+  }
+
+  /**
+   * Reads the frame that was just drawn and steps the chain down if it is blank.
+   *
+   * Must be called immediately after `render()`, inside the same task, because
+   * `readPixels` on the default framebuffer only sees the current frame before
+   * it is presented.
+   *
+   * The ladder is HDR offscreen -> 8-bit offscreen -> no post at all. The last
+   * rung is three.js rendering straight to the canvas, which is about as
+   * well-trodden a path as exists, so if that is black the problem is not here.
+   */
+  selfCheck(): void {
+    if (this.stage === 'done') return;
+    this.frames++;
+    // Let the first frames settle: shader compiles and texture uploads can make
+    // frame one legitimately empty.
+    if (this.frames < 20) return;
+    this.frames = 0;
+
+    const renderer = this.r.renderer;
+    const gl = renderer.getContext();
+    const lit = this.sampleCanvas(gl);
+
+    if (lit > 0) {
+      this.checkLog.push(`${this.stage}: ok`);
+      this.stage = 'done';
+      return;
+    }
+
+    // Nothing drawn. Drop to the next rung.
+    if (this.stage === 'hdr') {
+      this.checkLog.push('hdr: blank -> 8-bit');
+      this.hdr = false;
+      this.targetType = UnsignedByteType;
+      this.brightMat.uniforms.uThreshold.value = 0.62;
+      this.brightMat.uniforms.uKnee.value = 0.22;
+      this.w = this.h = 0; // force resize() to rebuild the targets
+      this.resize(innerWidth, innerHeight);
+      this.stage = 'ldr';
+    } else if (this.stage === 'ldr') {
+      this.checkLog.push('8-bit: blank -> post off');
+      this.enabled = false;
+      this.failure = 'offscreen passes render blank on this GPU';
+      this.stage = 'off';
+    } else {
+      this.checkLog.push('no-post: blank');
+      this.failure = 'canvas blank even without post-processing';
+      this.stage = 'done';
+    }
+  }
+
+  /** @returns how many of the sampled canvas pixels are not black. */
+  private sampleCanvas(gl: WebGLRenderingContext | WebGL2RenderingContext): number {
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    if (w < 4 || h < 4) return 1; // nothing meaningful to sample yet
+    const px = new Uint8Array(4);
+    let lit = 0;
+    // A spread of points, avoiding the very edges where vignette bites.
+    for (const [fx, fy] of [
+      [0.5, 0.5], [0.3, 0.4], [0.7, 0.4], [0.35, 0.65], [0.65, 0.65],
+      [0.5, 0.25], [0.5, 0.8], [0.2, 0.5], [0.8, 0.5],
+    ] as const) {
+      gl.readPixels(
+        Math.floor(w * fx), Math.floor(h * fy), 1, 1,
+        gl.RGBA, gl.UNSIGNED_BYTE, px
+      );
+      if (px[0] + px[1] + px[2] > 24) lit++;
+    }
+    return lit;
   }
 
   /** Full-screen colour flash, used on tier-ups. */

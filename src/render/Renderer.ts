@@ -28,7 +28,7 @@ export function detectQuality(): Quality {
 }
 
 /** True for phones and tablets; used to pick conservative context options. */
-const isTouchDevice = () =>
+export const isTouchDevice = () =>
   typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 export class Renderer {

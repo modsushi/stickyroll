@@ -127,6 +127,7 @@ bus.on('pause', ({ paused }) => {
 
 pause.describeRenderer = () =>
   `${renderer.diagnostics()}\npost   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr 8-bit') : 'off'}` +
+  (post.checkLog.length ? `\ncheck  ${post.checkLog.join(' | ')}` : '') +
   (post.failure ? `\n${post.failure}` : '') +
   (glLost ? '\nGL CONTEXT LOST' : '');
 
@@ -199,6 +200,9 @@ const loop = new Loop(
 
     hud.update(dt, renderer.camera);
     post.render();
+    // Verify by result, not by capability: read back what was actually drawn
+    // and step the effect chain down if the canvas came out blank.
+    post.selfCheck();
     renderer.adapt(loop.fps, innerWidth, innerHeight);
 
     if (perfOn) {
