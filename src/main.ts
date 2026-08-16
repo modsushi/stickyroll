@@ -30,6 +30,11 @@ import { el } from './ui/dom';
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
 
+// `?noui=1` hides the DOM overlay entirely. If the game appears, the canvas was
+// being composited under the HUD rather than failing to render — a distinction
+// no amount of WebGL diagnostics can make from the inside.
+if (/[?&]noui=1/.test(location.search)) document.documentElement.classList.add('no-ui');
+
 const quality = save.data.settings.quality === 'auto' ? detectQuality() : save.data.settings.quality;
 const renderer = new Renderer(canvas, quality);
 const post = new PostFX(renderer, quality);

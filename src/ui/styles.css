@@ -72,6 +72,9 @@ body {
   height: 100%;
   display: block;
   touch-action: none;
+  /* Explicit, so the canvas and the overlay are never left to `z-index: auto`
+     and whatever order the compositor feels like. */
+  z-index: 0;
 }
 
 #ui {
@@ -81,6 +84,16 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  z-index: 1;
+  /* Contains every filter, blend and stacking effect in the HUD so none of them
+     can reach down and affect the canvas layer below. */
+  isolation: isolate;
+}
+
+/* Diagnostic: `?noui=1` hides the whole overlay. If the game becomes visible,
+   the problem is the HUD compositing over the canvas, not the renderer. */
+html.no-ui #ui {
+  display: none;
 }
 
 /* Every direct child of the overlay and of the HUD is positioned, so each one
@@ -444,7 +457,6 @@ body {
   color: var(--gold);
   text-shadow: 0 2px 0 #7a3d00, 0 3px 8px rgba(0, 0, 0, 0.7);
   pointer-events: none;
-  will-change: transform, opacity;
   white-space: nowrap;
   transform: translate(-50%, -50%);
 }
@@ -541,7 +553,6 @@ body {
   box-shadow: 0 0 18px rgba(255, 201, 60, 0.9);
   transform: translate(-50%, -50%);
   pointer-events: none;
-  will-change: transform;
 }
 
 /* touch stick */
@@ -563,8 +574,13 @@ body {
   width: 132px;
   height: 132px;
   border: 3px solid rgba(255, 255, 255, 0.28);
-  background: rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(2px);
+  /* Deliberately NOT backdrop-filter. That property creates a backdrop root,
+     and on Chrome for Android the WebGL canvas underneath it composites black —
+     the whole game vanishes behind an overlay you can occasionally see it flash
+     through. It only ever showed up on phones because the stick is touch-only,
+     which is why it survived every desktop test. A flat translucent disc looks
+     near-identical and costs nothing. */
+  background: rgba(10, 6, 24, 0.22);
 }
 #stick .knob {
   width: 58px;
