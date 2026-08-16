@@ -56,7 +56,7 @@ const MAP = [
   ',,,#BCCCCCCC#PPPPPPPP#H.......#,,,',
   ',,,#BCCCCCCC#PPPPPPPP#H.......#,,,',
   ',,,#BCCCCCCC#PPPPPPPP#H.......#,,,',
-  ',,,XBBBBBBBBXPPPPPPPPXHHHHHHHHX,,,',
+  ',,,XBCCCCCCCXPPPPPPPPXH.......X,,,',
   '##X#X######X#X######X#X######X#X##',
   ',,,XH.......XBCCCCCCCX........X,,,',
   ',,,#H.......#BCCCCCCC#..T.T...#,,,',
@@ -103,8 +103,9 @@ export const DOWNTOWN: LevelDef = {
     { props: ['tree-small', 'planter'], on: ['.'], density: 0.34, clump: 0.8, scale: [0.9, 1.15] },
     { props: ['tree-large'], on: ['T'], density: 1.2, scale: [0.9, 1.2] },
 
-    // Street furniture on the kerb.
-    { props: ['street-light'], on: [','], density: 0.05, minFromStart: 20 },
+    // Street lights are placed as runs (see `lines`), not scattered: `,` only
+    // occurs on the outer promenade, so a scatter rule dotted them around the
+    // map's edge and lit nothing.
     { props: ['sign-highway'], on: [','], density: 0.014, minFromStart: 30 },
 
     // Parked cars along the kerbs — the tier 6 payoff, pre-placed so the city
@@ -117,6 +118,20 @@ export const DOWNTOWN: LevelDef = {
     },
     { props: ['kart'], on: [','], density: 0.03, minFromStart: 22 },
     { props: ['firetruck', 'ambulance', 'garbage-truck'], on: [','], density: 0.02, minFromStart: 30 },
+  ],
+
+  // Lit streets. Deliberately only the four sides of the spawn plaza and the
+  // one commercial street below it: lighting every road turns a readable
+  // silhouette into a picket fence, and evenly-spaced lamps read as designed
+  // only where the eye can take in the whole run.
+  lines: [
+    // Around the spawn plaza, lamps standing on the plaza kerb.
+    { prop: 'street-light', from: [13, 12], to: [20, 12], spacing: 12, offset: 2.8 },
+    { prop: 'street-light', from: [13, 21], to: [20, 21], spacing: 12, offset: -2.8 },
+    { prop: 'street-light', from: [12, 13], to: [12, 20], spacing: 12, offset: -2.8 },
+    { prop: 'street-light', from: [21, 13], to: [21, 20], spacing: 12, offset: 2.8 },
+    // One commercial street, lit down both kerbs so it reads as the main drag.
+    { prop: 'street-light', from: [4, 12], to: [11, 12], spacing: 10, offset: 2.8, alternate: true },
   ],
 
   clusters: [
@@ -255,33 +270,41 @@ export const DOWNTOWN: LevelDef = {
       id: 'junk-pile',
       on: [','],
       count: 30,
-      radius: 2.6,
+      radius: 1.7,
       minFromStart: 12,
       freeRotation: true,
+      // A heap, not a circle of litter. Everything sits within ~0.8 m of the
+      // centre and the light pieces rest *on* the box and tire rather than
+      // beside them — spread flat at arm's length this read as scattered
+      // rubbish, which is exactly what the rest of the map avoids.
       items: [
         { prop: 'box', x: 0, z: 0 },
-        { prop: 'tire', x: -1.0, z: 0.5 },
-        { prop: 'plate-a', x: 0.9, z: 0.6 },
-        { prop: 'bumper', x: 0.3, z: -1.2 },
-        { prop: 'bolt', x: 1.3, z: -0.5 },
-        { prop: 'nut', x: -1.4, z: -0.6 },
-        { prop: 'plate-small-a', x: -0.5, z: 1.3 },
+        { prop: 'tire', x: -0.62, z: 0.34 },
+        { prop: 'plate-a', x: 0.55, z: 0.38, rot: 0.4 },
+        { prop: 'bumper', x: 0.18, z: -0.66, rot: -0.3 },
+        // Stacked on the heap.
+        { prop: 'plate-small-a', x: 0.04, z: 0.06, y: 0.42, rot: 0.8 },
+        { prop: 'bolt', x: -0.58, z: 0.3, y: 0.3 },
+        { prop: 'nut', x: 0.62, z: -0.2 },
+        { prop: 'nut', x: -0.72, z: -0.38 },
       ],
     },
     {
       id: 'scrap-pile',
       on: [','],
       count: 22,
-      radius: 2.4,
+      radius: 1.6,
       minFromStart: 14,
       freeRotation: true,
+      // Same idea with the heavier car parts: a door leaned across the wheel,
+      // the small stuff on top of it.
       items: [
         { prop: 'wheel', x: 0, z: 0 },
-        { prop: 'door', x: 1.1, z: 0.4, rot: 0.5 },
-        { prop: 'spoiler', x: -1.0, z: 0.6 },
-        { prop: 'axle', x: 0.2, z: -1.1 },
-        { prop: 'plate-b', x: -1.2, z: -0.5 },
-        { prop: 'bolt', x: 0.7, z: 1.2 },
+        { prop: 'door', x: 0.6, z: 0.24, rot: 0.5 },
+        { prop: 'spoiler', x: -0.58, z: 0.34, rot: -0.4 },
+        { prop: 'axle', x: 0.12, z: -0.62 },
+        { prop: 'plate-b', x: -0.1, z: 0.05, y: 0.34, rot: 1.1 },
+        { prop: 'bolt', x: 0.4, z: 0.62, y: 0.26 },
       ],
     },
     // Roadworks belong *on* the carriageway — cones and barriers are the one

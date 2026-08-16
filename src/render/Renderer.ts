@@ -83,7 +83,7 @@ export class Renderer {
     // so a one-frame-old shadow map is indistinguishable in motion and costs
     // half as much.
     this.renderer.shadowMap.autoUpdate = false;
-    this.renderer.setClearColor(0x74c4e8);
+    this.renderer.setClearColor(0x9ecbe2);
 
     this.maxDpr = quality === 'high' ? 2 : 1.35;
     this.dpr = Math.min(devicePixelRatio || 1, this.maxDpr);
@@ -97,13 +97,15 @@ export class Renderer {
     // with hard rasterised edges, and the sky losing outright to black.
     this.camera = new PerspectiveCamera(46, 1, 5, 260);
 
-    // Warm key + cool sky fill is the whole lighting model. Anything more
-    // fights the flat-colour atlas rather than helping it.
+    // Bright near-white key plus a strong sky fill is the whole lighting model.
     //
-    // Intensities are deliberately modest: the atlas is already saturated, and
-    // over-lighting pushes every mid-tone into the shoulder of the ACES curve,
-    // which is what turns a bright toy city into a washed-out grey one.
-    this.sun = new DirectionalLight(0xfff0cf, 1.75);
+    // The earlier version deliberately under-lit, on the theory that the atlas
+    // was already saturated. In practice that plus ACES plus a heavy grade is
+    // what produced the washed, overcast look: the key was amber enough to
+    // tint everything sepia and the fill too weak to keep shadowed faces
+    // colourful. Lighting up and letting the grade lift rather than crush is
+    // what makes flat toy colours read as toy colours.
+    this.sun = new DirectionalLight(0xfff6e2, 2.0);
     this.sun.position.set(14, 22, 10);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.setScalar(quality === 'high' ? 1536 : 1024);
@@ -114,15 +116,17 @@ export class Renderer {
     c.far = 90;
     this.scene.add(this.sun, this.sun.target);
 
-    // Sky fill is what keeps shadowed sides readable instead of black. Kept low
-    // so the sun still does the shaping.
-    this.sky = new HemisphereLight(0xbcdcf5, 0x6e7a58, 0.95);
+    // Sky fill keeps shadowed sides readable. The ground bounce is a warm sand
+    // rather than the old dark olive, which was turning every shaded face
+    // grey-green.
+    this.sky = new HemisphereLight(0xd6f0ff, 0xbba97e, 1.25);
     this.scene.add(this.sky);
 
-    this.scene.background = new Color(0x74c4e8);
-    // Fog starts well beyond the play radius so it reads as aerial haze on the
-    // skyline rather than a grey wall creeping up on the ball.
-    this.scene.fog = new Fog(0x9fd8ee, 95, 240);
+    this.scene.background = new Color(0x9ecbe2);
+    // Fog matched to the sky and pushed well beyond the play radius, so it
+    // reads as aerial haze on the skyline rather than a grey wall creeping up
+    // on the ball. Starting at 95 m was flattening the mid-distance.
+    this.scene.fog = new Fog(0xc4dfec, 130, 280);
   }
 
   /**

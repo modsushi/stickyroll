@@ -97,6 +97,7 @@ uniform float uAberration;
 uniform float uFlash;
 uniform vec3  uFlashColor;
 uniform float uSat;
+uniform float uLift;
 uniform float uExposure;
 uniform float uContrast;
 uniform float uCurve;
@@ -115,11 +116,19 @@ vec3 linearToSRGB(vec3 c) {
 }
 
 vec3 grade(vec3 c) {
-  // Warm the highlights, cool the shadows. Two lerps, no LUT texture.
+  // Split-tone, but gently and *upward*. The previous pairing cooled the
+  // shadows toward blue-grey and warmed the highlights toward amber, which is
+  // a filmic look — flattering on skin, muddy on flat toy colours. Here the
+  // shadows keep a little sky-blue bounce and the highlights stay near-white,
+  // so nothing in the picture goes dingy.
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  vec3 shadow = vec3(0.95, 0.98, 1.06);
-  vec3 high   = vec3(1.05, 1.01, 0.94);
-  c *= mix(shadow, high, smoothstep(0.15, 0.85, l));
+  vec3 shadow = vec3(0.97, 1.00, 1.07);
+  vec3 high   = vec3(1.02, 1.01, 1.00);
+  c *= mix(shadow, high, smoothstep(0.10, 0.80, l));
+
+  // Lift the floor. Toy plastic has no true black on it, and the deep shadows
+  // ACES leaves behind are most of what read as "washed out and moody".
+  c = c * (1.0 - uLift) + uLift * vec3(0.62, 0.74, 0.86);
 
   // Contrast S-curve around mid-grey. ACES lands everything in a comfortable
   // but flat mid-range; this is what puts the snap back into a toy-bright
@@ -334,21 +343,29 @@ export class PostFX {
         tScene: new Uniform(null),
         tBloom: new Uniform(null),
         tBlur: new Uniform(null),
-        uBloom: new Uniform(quality === 'high' ? 0.62 : 0.45),
+        uBloom: new Uniform(quality === 'high' ? 0.5 : 0.36),
         uTilt: new Uniform(quality === 'high' ? 1.0 : 0.75),
         // Slightly below centre: the ball sits just under the middle of the
         // frame because the camera leads it, so that's what must stay sharp.
         uFocus: new Uniform(0.56),
         uBand: new Uniform(0.24),
-        uVignette: new Uniform(0.34),
-        uAberration: new Uniform(quality === 'high' ? 0.006 : 0.0),
+        // Barely there. A heavy vignette is theatre lighting; it was pulling
+        // the eye into a dark frame and making the whole picture feel dim.
+        uVignette: new Uniform(0.10),
+        // Off. Fringing is a lens artefact — it reads as photographic, which
+        // is the opposite of the look here.
+        uAberration: new Uniform(0.0),
         uFlash: new Uniform(0),
         uFlashColor: new Uniform([1, 0.96, 0.85]),
-        uSat: new Uniform(1.06),
-        uExposure: new Uniform(1.0),
-        uContrast: new Uniform(1.05),
+        // Above neutral because ACES desaturates as it rolls off, but only
+        // enough to restore the paint — 1.34 tipped the greens into neon.
+        uSat: new Uniform(1.18),
+        // Shadow lift toward a soft sky tint, so nothing crushes to black.
+        uLift: new Uniform(0.055),
+        uExposure: new Uniform(1.16),
+        uContrast: new Uniform(1.02),
         // Strength of the smoothstep S-curve laid over the linear contrast.
-        uCurve: new Uniform(0.16),
+        uCurve: new Uniform(0.08),
       },
       depthTest: false,
       depthWrite: false,

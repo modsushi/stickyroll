@@ -45,6 +45,19 @@ export class FlyCamera {
     private dom: HTMLElement
   ) {}
 
+  /** Places the camera and points it at a world position. */
+  placeAt(x: number, y: number, z: number, lookAt?: { x: number; y: number; z: number }) {
+    this.pos.set(x, y, z);
+    if (lookAt) {
+      const dx = lookAt.x - x;
+      const dy = lookAt.y - y;
+      const dz = lookAt.z - z;
+      this.yaw = Math.atan2(-dx, -dz);
+      this.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
+    }
+  }
+
   /**
    * Seeds orientation from wherever the follow camera currently is, so enabling
    * fly mode never snaps the view somewhere unexpected.

@@ -32,6 +32,12 @@ export interface ClusterItem {
   /** Yaw in radians, added to the cluster's rotation. */
   rot?: number;
   scale?: number;
+  /**
+   * Height off the ground in metres, for stacking. A heap of junk reads as a
+   * heap only if some of it sits *on* the rest; laid out flat it is just litter
+   * in a circle. Absorb tests are 2-D, so a raised prop is still reachable.
+   */
+  y?: number;
 }
 
 /**
@@ -56,6 +62,32 @@ export interface ClusterSpec {
   maxFromStart?: number;
   /** Free yaw rather than quarter turns. Good for junk, bad for seating rows. */
   freeRotation?: boolean;
+}
+
+/**
+ * Props placed at regular intervals along a straight run, in tile coordinates.
+ *
+ * Scatter rules cannot do this: they sprinkle by tile type, so street lights
+ * asked for on pavement ended up dotted around the map's outer promenade — the
+ * only place that tile occurs — rather than lining any street. Lighting a few
+ * chosen blocks properly needs the run stated outright.
+ */
+export interface LineSpec {
+  prop: string;
+  /** Tile coordinates of the run's ends, inclusive. */
+  from: [number, number];
+  to: [number, number];
+  /** Metres between props along the run. */
+  spacing: number;
+  /**
+   * Metres perpendicular to the run, positive to the right of from->to. Used to
+   * stand lights on the kerb instead of in the carriageway.
+   */
+  offset?: number;
+  /** Yaw in radians added to the run's own facing. */
+  rot?: number;
+  /** Alternate the offset side each step, for lights down both kerbs. */
+  alternate?: boolean;
 }
 
 export interface ScatterRule {
@@ -116,6 +148,8 @@ export interface LevelDef {
   scatter: ScatterRule[];
   /** Hand-arranged prop groups — see ClusterSpec. */
   clusters: ClusterSpec[];
+  /** Props placed along straight runs — see LineSpec. */
+  lines?: LineSpec[];
   lanes: LaneSpec[];
   /** Pedestrians wander tiles matching these chars. */
   pedestrianOn: TileChar[];

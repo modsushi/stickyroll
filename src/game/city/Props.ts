@@ -111,7 +111,7 @@ export class Props {
     }
   }
 
-  add(def: PropDef, x: number, z: number, rotY: number, scaleMul = 1): PropInstance {
+  add(def: PropDef, x: number, z: number, rotY: number, scaleMul = 1, lift = 0): PropInstance {
     const key = this.key(def, x, z);
     const batch = this.batches.get(key);
     if (!batch) throw new Error(`prop batch not allocated: ${key}`);
@@ -124,7 +124,8 @@ export class Props {
     // is big enough to be worth it.
     if (def.absorbSize >= SHADOW_MIN_SIZE) batch.mesh.setShadows(true, true);
 
-    _p.set(x, 0, z);
+    // `lift` stacks props on top of one another for junk heaps.
+    _p.set(x, lift, z);
     _e.set(0, rotY, 0);
     _q.setFromEuler(_e);
     _s.setScalar(scale);
@@ -137,7 +138,7 @@ export class Props {
       z,
       // Absorb tests are 2D, but the y of the prop's visual centre is used to
       // place it on the ball's surface at the right height.
-      y: src.size.y * scale * 0.5,
+      y: lift + src.size.y * scale * 0.5,
       rotY,
       scale,
       absorbed: false,

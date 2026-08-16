@@ -3,6 +3,7 @@
 // kit's `Textures/` folder must land as a sibling of its .glb files or materials
 // silently fall back to untextured white.
 import { cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +46,16 @@ const UI_FILES = [
 ];
 
 const FONTS = ['Kenney Future.ttf', 'Kenney Future Narrow.ttf'];
+
+/**
+ * Fonts that ship as a zip rather than a loose file, and the member to pull out.
+ * Mochiy Pop One is the game's display face — round, soft and childlike, which
+ * the Kenney faces are not.
+ */
+const ZIP_FONTS = [{ zip: 'Mochiy_Pop_One.zip', member: 'MochiyPopOne-Regular.ttf' }];
+
+/** Streamed audio, copied as-is. */
+const AUDIO = ['Pocket Garden Loop.mp3'];
 
 /**
  * Every model name in the game appears as a string literal in `src/` — prop
@@ -129,6 +140,29 @@ async function copyFonts() {
     await cp(join(from, f), join(to, f));
     n++;
   }
+  for (const { zip, member } of ZIP_FONTS) {
+    const archive = join(src, zip);
+    if (!existsSync(archive) || existsSync(join(to, member))) {
+      if (existsSync(join(to, member))) n++;
+      continue;
+    }
+    // `unzip -j` flattens, -o overwrites; the archives here hold a single face
+    // plus its licence, so pulling one member by name is enough.
+    execFileSync('unzip', ['-o', '-j', archive, member, '-d', to], { stdio: 'ignore' });
+    n++;
+  }
+  return n;
+}
+
+async function copyAudio() {
+  const to = join(out, 'audio');
+  await mkdir(to, { recursive: true });
+  let n = 0;
+  for (const f of AUDIO) {
+    if (!existsSync(join(src, f))) continue;
+    await cp(join(src, f), join(to, f));
+    n++;
+  }
   return n;
 }
 
@@ -154,10 +188,11 @@ for (const [id, pack] of Object.entries(KITS)) {
 }
 const ui = await copyUi();
 const fonts = await copyFonts();
+const audio = await copyAudio();
 
 const mb = (await dirSize(out)) / 1024 / 1024;
 console.log(
   `[assets] ${models} models across ${Object.keys(KITS).length} kits ` +
-    `(${skipped} unreferenced skipped), ${ui} ui sprites, ${fonts} fonts ` +
+    `(${skipped} unreferenced skipped), ${ui} ui sprites, ${fonts} fonts, ${audio} audio ` +
     `-> public/ (${mb.toFixed(1)} MB)`
 );

@@ -1,33 +1,51 @@
 /**
  * Sound effects, all synthesised at call time.
  *
- * The pickup chime is the centrepiece. Its pitch walks up a pentatonic ladder
- * as the combo climbs and snaps back down when the combo drops — the same
- * escalation-and-release loop a slot machine uses, and the reason a run of
- * twenty cones feels better than twenty separate cones.
+ * The pickup is the centrepiece, and it is a **pop** — a short bubble-like
+ * blip made from a fast upward pitch bend under a very short envelope.
+ *
+ * It used to be a pluck whose pitch climbed a pentatonic ladder with the combo
+ * and snapped back when the combo broke: a slot-machine escalation. That is
+ * effective and it is also unmistakably a casino, which is not what this game
+ * is. The ladder is gone. Pitch now varies only with how big the thing was and
+ * a touch of randomness, so a hundred pickups stay lively without ever
+ * marching up a scale.
+ *
+ * Three families, deliberately few:
+ *   pop    everything ordinary — litter, cones, furniture, shop fittings
+ *   human  citizens, so eating a person is unmistakable
+ *   chunk  cars and other heavy things, a deeper pop with a thud under it
  */
 
 import { audio } from './AudioEngine';
 import { clamp01 } from '../core/Math';
 import type { PropDef } from '../data/props';
 
-/** Minor pentatonic, two octaves. Pleasant in any order, which matters when
- *  pickups fire in unpredictable rhythms. */
-const LADDER = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27, 29, 31, 34, 36];
+/**
+ * Musical helpers, still used by the celebratory stingers — tier-ups, star
+ * reveals and the collectible fanfare are the places where a chord genuinely
+ * belongs. The moment-to-moment pickups deliberately no longer use them.
+ */
 const ROOT = 220; // A3
-
 const semi = (n: number) => ROOT * Math.pow(2, n / 12);
 
-/** Per-material timbre for pickups. */
-const VOICE: Record<
+/**
+ * Where each voice sits, as the pop's landing pitch in Hz.
+ *
+ * Small things pop high and short, big things low and round. Everything except
+ * `human` and `heavy` is the same sound at a different pitch, which is what
+ * makes the pop read as *the* pickup sound rather than one of five.
+ */
+const POP: Record<
   NonNullable<PropDef['voice']>,
-  { type: OscillatorType; decay: number; bright: number; noise: number }
+  { freq: number; decay: number; family: 'pop' | 'human' | 'chunk' }
 > = {
-  tiny: { type: 'triangle', decay: 0.1, bright: 1.6, noise: 0.12 },
-  metal: { type: 'square', decay: 0.16, bright: 2.1, noise: 0.2 },
-  wood: { type: 'triangle', decay: 0.14, bright: 1.0, noise: 0.3 },
-  soft: { type: 'sine', decay: 0.2, bright: 0.8, noise: 0.08 },
-  heavy: { type: 'sawtooth', decay: 0.3, bright: 0.55, noise: 0.35 },
+  tiny: { freq: 880, decay: 0.075, family: 'pop' },
+  metal: { freq: 740, decay: 0.085, family: 'pop' },
+  wood: { freq: 590, decay: 0.095, family: 'pop' },
+  soft: { freq: 480, decay: 0.105, family: 'pop' },
+  heavy: { freq: 190, decay: 0.2, family: 'chunk' },
+  human: { freq: 520, decay: 0.16, family: 'human' },
 };
 
 class Sfx {
@@ -36,15 +54,15 @@ class Sfx {
   private pickupsThisFrame = 0;
 
   /**
-   * @param comboTier drives the ladder step, so the melody rises with the run
+   * @param comboTier no longer changes pitch — only a little loudness and
+   *   sparkle, so a long run feels good without turning into a scale
    */
   pickup(def: PropDef, comboTier: number) {
     const a = audio;
     if (!a.ready) return;
     const t = a.now;
 
-    // More than a few simultaneous pickups is noise, not feedback. Detune the
-    // extras slightly instead of stacking identical transients.
+    // More than a few simultaneous pickups is noise, not feedback.
     if (t - this.lastPickup < 0.012) {
       if (++this.pickupsThisFrame > 3) return;
     } else {
@@ -52,53 +70,88 @@ class Sfx {
     }
     this.lastPickup = t;
 
-    const v = VOICE[def.voice ?? 'soft'];
-    const step = LADDER[Math.min(comboTier, LADDER.length - 1)];
-    // Small random offset within the scale keeps repeated pickups at the same
-    // combo tier from sounding like a stuck key.
-    const jitter = (this.pickupsThisFrame % 3) * 2;
-    const freq = semi(step + jitter) * (def.voice === 'heavy' ? 0.5 : 1);
+    const v = POP[def.voice ?? 'soft'];
+    // Random detune only, and narrow. This is what stops a cluster of identical
+    // cones sounding like a stuck key, without implying any melody.
+    const detune = 0.92 + Math.random() * 0.16;
+    const freq = v.freq * detune;
+    const peak = 0.2 * (0.85 + clamp01(comboTier / 8) * 0.3);
 
-    const peak = 0.22 * (0.75 + clamp01(comboTier / 8) * 0.5);
+    if (v.family === 'human') this.popHuman(t, freq, peak);
+    else this.popBody(t, freq, peak, v.decay, v.family === 'chunk');
 
-    const g = a.env(t, peak, 0.003, v.decay);
-    const o = a.osc(v.type, freq, t);
-    // Quick downward pitch blip gives the transient a "pluck" attack.
-    o.frequency.setValueAtTime(freq * 1.18, t);
-    o.frequency.exponentialRampToValueAtTime(freq, t + 0.035);
-
-    const lp = a.filter('lowpass', freq * 6 * v.bright, 0.8);
-    o.connect(lp);
-    lp.connect(g);
-    g.connect(a.sfxBus);
-    a.send(g, 0.18);
-
-    // A tiny noise transient is what separates "a beep" from "an object".
-    if (v.noise > 0) {
-      const n = a.noise();
-      const ng = a.env(t, peak * v.noise, 0.001, 0.05);
-      const nf = a.filter('bandpass', freq * 4, 1.4);
-      n.connect(nf);
-      nf.connect(ng);
-      ng.connect(a.sfxBus);
-      n.start(t);
-      n.stop(t + 0.1);
-    }
-
-    // A shimmering fifth above, fading in as the combo climbs, so high combos
-    // literally sound richer.
-    if (comboTier >= 3) {
-      const h = a.osc('sine', freq * 3, t);
-      const hg = a.env(t, peak * 0.3 * clamp01((comboTier - 2) / 5), 0.004, 0.12);
+    // High combos get a little sparkle on top — richness rather than pitch, so
+    // it reads as "going well" instead of "climbing a ladder".
+    if (comboTier >= 4) {
+      const h = a.osc('sine', 1560 + Math.random() * 320, t);
+      const hg = a.env(t, peak * 0.16 * clamp01((comboTier - 3) / 5), 0.004, 0.1);
       h.connect(hg);
       hg.connect(a.sfxBus);
       a.send(hg, 0.3);
       h.start(t);
-      h.stop(t + 0.35);
+      h.stop(t + 0.3);
     }
+  }
 
+  /**
+   * The pop itself: a sine whose pitch snaps *upward* into place under a very
+   * short envelope, which is what the ear hears as a bubble bursting. A
+   * downward bend would be a pluck, and a flat tone would be a beep.
+   */
+  private popBody(t: number, freq: number, peak: number, decay: number, chunky: boolean) {
+    const a = audio;
+    const o = a.osc(chunky ? 'triangle' : 'sine', freq, t);
+    o.frequency.setValueAtTime(freq * 0.45, t);
+    o.frequency.exponentialRampToValueAtTime(freq, t + (chunky ? 0.05 : 0.028));
+    // A hair of overshoot past the target, then settle — the "oo-p" tail.
+    o.frequency.exponentialRampToValueAtTime(freq * 0.86, t + decay);
+
+    const g = a.env(t, peak, 0.002, decay);
+    const lp = a.filter('lowpass', freq * 7, 0.7);
+    o.connect(lp);
+    lp.connect(g);
+    g.connect(a.sfxBus);
+    a.send(g, 0.14);
     o.start(t);
-    o.stop(t + v.decay + 0.2);
+    o.stop(t + decay + 0.15);
+
+    // Heavy things land as well as pop: a short low thud underneath.
+    if (chunky) {
+      const th = a.osc('sine', 70, t);
+      th.frequency.exponentialRampToValueAtTime(42, t + 0.18);
+      const tg = a.env(t, peak * 0.8, 0.003, 0.18);
+      th.connect(tg);
+      tg.connect(a.sfxBus);
+      th.start(t);
+      th.stop(t + 0.3);
+    }
+  }
+
+  /**
+   * Citizens. A two-note upward "whoop" with a little vibrato — cartoon
+   * surprise rather than distress, since the whole point is that this is
+   * cheerful. Distinct enough that you always know you got a person.
+   */
+  private popHuman(t: number, freq: number, peak: number) {
+    const a = audio;
+    const o = a.osc('triangle', freq, t);
+    o.frequency.setValueAtTime(freq * 0.7, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 1.5, t + 0.09);
+    o.frequency.exponentialRampToValueAtTime(freq * 1.32, t + 0.2);
+
+    const vib = a.osc('sine', 11, t);
+    const vibAmt = a.gain(freq * 0.045);
+    vib.connect(vibAmt);
+    vibAmt.connect(o.frequency);
+    vib.start(t);
+    vib.stop(t + 0.32);
+
+    const g = a.env(t, peak * 0.95, 0.006, 0.2);
+    o.connect(g);
+    g.connect(a.sfxBus);
+    a.send(g, 0.24);
+    o.start(t);
+    o.stop(t + 0.35);
   }
 
   /** Bounce off something too big. Dull, low, no sting — never a punishment. */

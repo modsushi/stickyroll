@@ -10,6 +10,16 @@
  * arrangement from the reference art.
  */
 
+/*
+ * Mochiy Pop One is the display face: round, soft and childlike. The Kenney
+ * faces are squared-off and technical, which is most of why the UI read as
+ * arcade-cabinet rather than picture-book.
+ */
+@font-face {
+  font-family: 'Mochiy Pop One';
+  src: url('/fonts/MochiyPopOne-Regular.ttf') format('truetype');
+  font-display: block;
+}
 @font-face {
   font-family: 'Kenney Future';
   src: url('/fonts/Kenney Future.ttf') format('truetype');
@@ -22,18 +32,35 @@
 }
 
 :root {
-  /* Pairs with the <meta name="color-scheme"> in index.html. Both are needed:
-     the meta tag applies before CSS loads, this covers the rest. Without it
-     Chrome for Android force-darkens the page and the canvas renders black. */
-  color-scheme: dark;
+  /* Pairs with the <meta name="color-scheme"> in index.html. Declaring a scheme
+     at all is what stops Chrome for Android force-darkening the page; both are
+     kept because the meta applies before CSS loads. (This was once suspected of
+     causing the Android black screen — it was not, see Batch.ts — but declaring
+     it is still correct.) The UI is a daylight design now, so light leads. */
+  color-scheme: light dark;
 
-  --gold: #ffc93c;
-  --gold-deep: #e08a12;
-  --purple: #6b3fa0;
-  --purple-deep: #40206b;
-  --purple-dark: #2a1147;
-  --ink: #1b1030;
-  --white: #fff8ee;
+  /*
+   * Playground palette. The previous scheme was gold-on-deep-purple, which is
+   * casino signage — high contrast, night-time, a bit adult. This is a sunny
+   * daytime set: sky blues and grass greens with a warm sunshine accent, all
+   * light enough that the UI reads as toys rather than tokens.
+   */
+  --sun: #ffd23f;
+  --sun-deep: #f0952a;
+  --sky: #63a8cd;
+  --sky-deep: #3d7fa4;
+  --sky-dark: #2b5f7d;
+  --ink: #2b4a63;
+  --white: #ffffff;
+  --cream: #fffdf6;
+
+  /* Kept so any rule still naming the old tokens stays sane rather than
+     falling back to transparent. */
+  --gold: var(--sun);
+  --gold-deep: var(--sun-deep);
+  --purple: var(--sky);
+  --purple-deep: var(--sky-deep);
+  --purple-dark: var(--sky-dark);
 
   --card: clamp(58px, 15vw, 84px);
   --pad: clamp(10px, 2.6vw, 20px);
@@ -56,9 +83,9 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  background: var(--ink);
+  background: #cfe0ea;
   color: var(--white);
-  font-family: 'Kenney Future', system-ui, sans-serif;
+  font-family: 'Mochiy Pop One', 'Kenney Future', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
@@ -114,7 +141,7 @@ html.no-ui #ui {
    highlight, and a hard bottom edge that fakes extrusion. Doing this with
    gradients rather than the pack's PNGs keeps every element crisp at any DPI. */
 .plate {
-  background: linear-gradient(180deg, #7d4bb8 0%, var(--purple) 42%, var(--purple-deep) 100%);
+  background: linear-gradient(180deg, #a9d4e8 0%, var(--sky) 42%, var(--sky-deep) 100%);
   border: 3px solid var(--gold);
   border-radius: 18px;
   box-shadow:
@@ -130,7 +157,7 @@ html.no-ui #ui {
   gap: 0.5em;
   padding: 0.42em 0.9em;
   border-radius: 999px;
-  background: linear-gradient(180deg, #7d4bb8 0%, var(--purple) 45%, var(--purple-deep) 100%);
+  background: linear-gradient(180deg, #a9d4e8 0%, var(--sky) 45%, var(--sky-deep) 100%);
   border: 3px solid var(--gold);
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.3),
@@ -165,7 +192,7 @@ html.no-ui #ui {
     0 4px 10px rgba(0, 0, 0, 0.4);
 }
 .btn.ghost {
-  background: linear-gradient(180deg, #8d5ac8 0%, var(--purple) 48%, var(--purple-deep) 100%);
+  background: linear-gradient(180deg, #b8dded 0%, var(--sky) 48%, var(--sky-deep) 100%);
   color: var(--white);
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.25),
@@ -183,7 +210,7 @@ html.no-ui #ui {
   height: clamp(42px, 11vw, 56px);
   border: 3px solid var(--gold);
   border-radius: 50%;
-  background: linear-gradient(180deg, #8d5ac8 0%, var(--purple) 45%, var(--purple-deep) 100%);
+  background: linear-gradient(180deg, #b8dded 0%, var(--sky) 45%, var(--sky-deep) 100%);
   color: var(--white);
   display: grid;
   place-items: center;
@@ -207,7 +234,7 @@ html.no-ui #ui {
   justify-items: center;
   gap: 26px;
   background:
-    radial-gradient(120% 90% at 50% 12%, #4b2580 0%, #2a1147 48%, #170a29 100%);
+    radial-gradient(120% 90% at 50% 8%, #d3e6f0 0%, #a3c8dc 45%, #6e9db9 100%);
   z-index: 100;
   transition: opacity 0.5s ease;
   text-align: center;
@@ -226,7 +253,7 @@ html.no-ui #ui {
   text-shadow:
     0 3px 0 #a35d05,
     0 6px 0 #6d3d03,
-    0 14px 30px rgba(0, 0, 0, 0.6);
+    0 14px 30px rgba(28, 111, 156, 0.35);
   animation: logoIn 0.8s var(--ease-pop) both;
 }
 .logo small {
@@ -340,7 +367,7 @@ html.no-ui #ui {
   display: grid;
   justify-items: center;
   gap: 2px;
-  background: linear-gradient(180deg, #7d4bb8 0%, var(--purple) 45%, var(--purple-deep) 100%);
+  background: linear-gradient(180deg, #a9d4e8 0%, var(--sky) 45%, var(--sky-deep) 100%);
   border: 3px solid var(--gold);
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.26),
@@ -395,10 +422,10 @@ html.no-ui #ui {
   display: grid;
   place-items: center;
   font-size: clamp(10px, 2.6vw, 13px);
-  color: rgba(255, 255, 255, 0.5);
-  background: linear-gradient(180deg, #4a2a72 0%, #331a52 100%);
-  border: 3px solid rgba(255, 201, 60, 0.3);
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+  color: rgba(43, 74, 99, 0.55);
+  background: linear-gradient(180deg, #d5e4ec 0%, #a6bfcd 100%);
+  border: 3px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 3px 0 rgba(28, 111, 156, 0.35);
   transition: all 0.3s var(--ease-pop);
 }
 .pip.on {
@@ -424,7 +451,7 @@ html.no-ui #ui {
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--gold);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+  text-shadow: 0 2px 0 rgba(28, 111, 156, 0.45);
   opacity: 0.9;
   white-space: nowrap;
 }
@@ -484,7 +511,7 @@ html.no-ui #ui {
 .combo .n {
   font-size: clamp(26px, 8vw, 46px);
   color: var(--gold);
-  text-shadow: 0 3px 0 #7a3d00, 0 6px 14px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 3px 0 #b26a08, 0 6px 14px rgba(28, 111, 156, 0.3);
   display: block;
   line-height: 1;
 }
@@ -598,7 +625,7 @@ html.no-ui #ui {
   justify-items: center;
   gap: clamp(14px, 3vw, 24px);
   padding: max(24px, var(--safe-t)) 24px max(24px, var(--safe-b));
-  background: radial-gradient(120% 90% at 50% 20%, rgba(75, 37, 128, 0.94), rgba(15, 7, 28, 0.97));
+  background: radial-gradient(120% 90% at 50% 18%, rgba(198, 224, 236, 0.95), rgba(74, 130, 163, 0.97));
   pointer-events: auto;
   z-index: 50;
   overflow-y: auto;
@@ -615,7 +642,7 @@ html.no-ui #ui {
 .screen h1 {
   font-size: clamp(26px, 7.5vw, 46px);
   color: var(--gold);
-  text-shadow: 0 3px 0 #a35d05, 0 6px 0 #6d3d03, 0 12px 26px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 3px 0 #e08a12, 0 6px 0 #b26a08, 0 10px 20px rgba(28, 111, 156, 0.35);
   letter-spacing: 0.03em;
   text-align: center;
 }
@@ -661,7 +688,7 @@ html.no-ui #ui {
 .big-score {
   font-size: clamp(40px, 12vw, 76px);
   color: var(--white);
-  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 10px 26px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 4px 0 rgba(28, 111, 156, 0.4), 0 10px 26px rgba(28, 111, 156, 0.3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -730,7 +757,7 @@ html.no-ui #ui {
 }
 .slot.found {
   border-color: var(--gold);
-  background: linear-gradient(180deg, #7d4bb8, var(--purple-deep));
+  background: linear-gradient(180deg, #a9d4e8, var(--sky-deep));
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 3px 0 rgba(0, 0, 0, 0.3);
 }
 .slot canvas {
@@ -782,7 +809,45 @@ html.no-ui #ui {
 .slider input {
   pointer-events: auto;
   width: min(46vw, 220px);
-  accent-color: var(--gold);
+  /* Styled explicitly rather than left to `accent-color`. The panel is light
+     whatever the OS theme is, and a UA-drawn track follows the *system*
+     preference — so on a dark-mode desktop the unfilled half rendered nearly
+     black against a pale blue panel and read as a rendering bug. */
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 22px;
+}
+.slider input::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: inset 0 1px 2px rgba(43, 95, 125, 0.3);
+}
+.slider input::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: inset 0 1px 2px rgba(43, 95, 125, 0.3);
+}
+.slider input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  border: 2px solid #fff;
+  box-shadow: 0 2px 0 var(--sun-deep);
+}
+.slider input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  border: 2px solid #fff;
+  box-shadow: 0 2px 0 var(--sun-deep);
 }
 
 /* perf hud */

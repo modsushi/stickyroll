@@ -32,7 +32,7 @@ import { Results } from './ui/Results';
 import { el } from './ui/dom';
 
 /** Bumped by hand so a screenshot proves which build is being tested. */
-const BUILD = 'build 2026-08-17c';
+const BUILD = 'build 2026-08-17f';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -239,6 +239,7 @@ const loop = new Loop(
         `post   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr (8-bit)') : 'off'}` +
         (post.failure ? `\n       ${post.failure}` : '') +
         `\n${renderer.diagnostics()}` +
+        `\n${music.describe()}` +
         (fly.enabled ? `\n${fly.describe()}` : '');
     }
   }
@@ -311,6 +312,18 @@ const loop = new Loop(
     fly.attach();
     const sp = param('flyspeed');
     if (sp) fly.speed = parseFloat(sp);
+    // `?flyat=x,y,z` starts the camera somewhere specific, looking at the map
+    // centre — handy for an overhead read of the whole district. Six numbers
+    // aim it somewhere else instead: `?flyat=x,y,z,lookX,lookY,lookZ`.
+    const at = param('flyat');
+    if (at) {
+      const n = at.split(',').map(Number);
+      fly.placeAt(n[0], n[1], n[2], {
+        x: n[3] ?? 0,
+        y: n[4] ?? 0,
+        z: n[5] ?? 0,
+      });
+    }
     // Exposed so the camera can be driven or inspected from the console.
     (window as unknown as { fly: FlyCamera }).fly = fly;
     perfOn = true; // the overlay carries the fly controls hint

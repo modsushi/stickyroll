@@ -63,7 +63,15 @@ export const KIT_MATERIAL: Record<KitId, 'atlas' | 'vertexColor'> = {
 /** Characters are rescaled so a citizen stands this tall. */
 export const CHARACTER_HEIGHT = 1.8;
 
-export type Voice = 'tiny' | 'wood' | 'metal' | 'soft' | 'heavy';
+/**
+ * Which sound a prop makes when it sticks.
+ *
+ * Deliberately coarse. Most of the city is `pop` — that is the sound of the
+ * game — with `human` for citizens and `chunk` for the heavy things, so the
+ * rare pickups stand out against a familiar background rather than every prop
+ * having its own timbre.
+ */
+export type Voice = 'tiny' | 'wood' | 'metal' | 'soft' | 'heavy' | 'human';
 
 export interface PropSpec {
   id: string;
@@ -142,7 +150,7 @@ const SPECS: PropSpec[] = [
   // ── Tier 4 · the city starts coming loose ─────────────────────────────
   { id: 'planter', kit: 'suburban', model: 'planter', tier: 4, label: 'Planter', voice: 'wood' },
   { id: 'tree-small', kit: 'suburban', model: 'tree-small', tier: 4, label: 'Sapling', voice: 'soft' },
-  { id: 'pedestrian', kit: 'characters', model: 'character-a', tier: 4, label: 'Citizen', voice: 'soft', massBias: 3, pointsBias: 4 },
+  { id: 'pedestrian', kit: 'characters', model: 'character-a', tier: 4, label: 'Citizen', voice: 'human', massBias: 3, pointsBias: 4 },
 
   // ── Tier 5 · big street furniture and small vehicles ──────────────────
   { id: 'fence', kit: 'suburban', model: 'fence', tier: 5, label: 'Picket Fence', voice: 'wood' },

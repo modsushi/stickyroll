@@ -43,8 +43,19 @@ const _s = new Vector3(1, 1, 1);
 
 const isRoad = (c: string) => c === '#' || c === 'X';
 
+/** A resolved prop placement, before it is handed to the batcher. */
+interface Placement {
+  def: PropDef;
+  x: number;
+  z: number;
+  rotY: number;
+  scale: number;
+  /** Height off the ground, for stacked junk. */
+  lift?: number;
+}
+
 /** Fog colour the distant skyline washes toward, matching Renderer's fog. */
-const HORIZON_HAZE = new Color(0x9fd8ee);
+const HORIZON_HAZE = new Color(0xc4dfec);
 
 /**
  * Radius around the spawn kept free of anything the starting ball can't move.
@@ -199,13 +210,19 @@ export class CityBuilder {
     // around the arrangements instead of landing on top of them.
     const claimed = new Set<string>();
     const clusters = this.planClusters(claimed);
-    const placements = [...clusters, ...this.planProps(claimed), ...scenery.absorbable];
+    const lines = this.planLines(claimed);
+    const placements = [
+      ...lines,
+      ...clusters,
+      ...this.planProps(claimed),
+      ...scenery.absorbable,
+    ];
     this.guaranteeCollectibles(placements);
 
     for (const pl of placements) props.reserve(pl.def, pl.x, pl.z);
     props.allocate();
     for (const pl of placements) {
-      const inst = props.add(pl.def, pl.x, pl.z, pl.rotY, pl.scale);
+      const inst = props.add(pl.def, pl.x, pl.z, pl.rotY, pl.scale, pl.lift ?? 0);
       hash.insert(inst);
       let list = byProp.get(pl.def.id);
       if (!list) byProp.set(pl.def.id, (list = []));
@@ -252,8 +269,15 @@ export class CityBuilder {
 
     // Darker than the Kenney pavement tile on purpose: the ball is near-white,
     // and it has to read against this surface for the entire game.
-    const paveColor = new Color(0x8e8b82);
-    const grassColor = new Color(0x63a03c);
+    // Cool light concrete. This was briefly a warm cream, which looked lovely
+    // empty and was a mistake the moment furniture stood on it: the furniture
+    // kit is warm tan wood, so tables and chairs sank into the pavement. A
+    // cool grey is the same brightness but the opposite hue, so the warm props
+    // read as objects sitting on a surface rather than pattern in it.
+    const paveColor = new Color(0xbcc3c9);
+    // Bright, but pulled back from the near-neon it was — a real lawn, not a
+    // highlighter.
+    const grassColor = new Color(0x74b04a);
 
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.cols; x++) {
@@ -310,7 +334,7 @@ export class CityBuilder {
     skirt.rotateX(-Math.PI / 2);
     const skirtMesh = new Mesh(
       skirt,
-      makeLit({ color: 0x7d8790, roughness: 1, metalness: 0 })
+      makeLit({ color: 0xb3bac0, roughness: 1, metalness: 0 })
     );
     skirtMesh.position.y = -0.06;
     skirtMesh.receiveShadow = false;
@@ -616,7 +640,7 @@ export class CityBuilder {
    */
   private planClusters(occupied: Set<string>) {
     const L = this.level;
-    const out: { def: PropDef; x: number; z: number; rotY: number; scale: number }[] = [];
+    const out: Placement[] = [];
     const startX = this.worldX(L.start[0]);
     const startZ = this.worldZ(L.start[1]);
 
@@ -672,6 +696,7 @@ export class CityBuilder {
             z: iz,
             rotY: yaw + (item.rot ?? 0),
             scale: item.scale ?? 1,
+            lift: item.y,
           });
         }
         placed++;
@@ -680,9 +705,62 @@ export class CityBuilder {
     return out;
   }
 
+  /**
+   * Props stepped along a straight run — street lights down a kerb.
+   *
+   * Deliberately not routed through `claim`: a line is authored, so it should
+   * appear exactly where it was asked for rather than losing lamps to whatever
+   * scatter happened to land first. It runs before the scatter and claims its
+   * own ground, so the loose props flow around it instead.
+   */
+  private planLines(occupied: Set<string>): Placement[] {
+    const out: Placement[] = [];
+    for (const spec of this.level.lines ?? []) {
+      if (!(spec.prop in PROPS)) continue;
+      const def = prop(spec.prop);
+
+      const x0 = this.worldX(spec.from[0]);
+      const z0 = this.worldZ(spec.from[1]);
+      const x1 = this.worldX(spec.to[0]);
+      const z1 = this.worldZ(spec.to[1]);
+      const dx = x1 - x0;
+      const dz = z1 - z0;
+      const len = Math.hypot(dx, dz);
+      if (len < 1e-3) continue;
+
+      const ux = dx / len;
+      const uz = dz / len;
+      // Perpendicular, to the right of from->to.
+      const px = -uz;
+      const pz = ux;
+      // Facing along the run, so a lamp's arm reaches over the carriageway.
+      const yaw = Math.atan2(ux, uz) + (spec.rot ?? 0);
+
+      const steps = Math.max(1, Math.round(len / spec.spacing));
+      for (let i = 0; i <= steps; i++) {
+        const t = (i / steps) * len;
+        const side = spec.alternate && i % 2 === 1 ? -1 : 1;
+        const off = (spec.offset ?? 0) * side;
+        const x = x0 + ux * t + px * off;
+        const z = z0 + uz * t + pz * off;
+        if (!this.canPlaceAt(x, z)) continue;
+        this.claim(occupied, x, z, 1.2);
+        out.push({
+          def,
+          x,
+          z,
+          // Lamps on the far kerb face back across the road.
+          rotY: yaw + (side < 0 ? Math.PI : 0),
+          scale: 1,
+        });
+      }
+    }
+    return out;
+  }
+
   private planProps(occupied: Set<string>) {
     const L = this.level;
-    const out: { def: PropDef; x: number; z: number; rotY: number; scale: number }[] = [];
+    const out: Placement[] = [];
     const startX = this.worldX(L.start[0]);
     const startZ = this.worldZ(L.start[1]);
 
@@ -748,7 +826,7 @@ export class CityBuilder {
    * small surplus, so the last one isn't a needle hunt).
    */
   private guaranteeCollectibles(
-    placements: { def: PropDef; x: number; z: number; rotY: number; scale: number }[]
+    placements: Placement[]
   ) {
     const L = this.level;
     for (const c of L.collectibles) {
@@ -844,7 +922,7 @@ export class CityBuilder {
       }
     }
 
-    const absorbable: { def: PropDef; x: number; z: number; rotY: number; scale: number }[] = [];
+    const absorbable: Placement[] = [];
     const staticByModel = new Map<string, typeof list>();
 
     for (const b of list) {
