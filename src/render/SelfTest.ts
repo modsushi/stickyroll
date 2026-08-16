@@ -36,6 +36,9 @@ export interface SelfTestStep {
   name: string;
   lit: number;
   of: number;
+  /** Draw calls and triangles the renderer reported for this step. */
+  calls?: number;
+  tris?: number;
   note?: string;
 }
 
@@ -76,9 +79,18 @@ export function runSelfTest(
     renderer.setRenderTarget(null);
     renderer.setClearColor(0x000000, 1);
     renderer.clear();
+    renderer.info.reset();
     try {
       draw();
-      steps.push({ name, lit: sample(gl), of: 9, note });
+      const r = renderer.info.render;
+      steps.push({
+        name,
+        lit: sample(gl),
+        of: 9,
+        calls: r.calls,
+        tris: Math.round(r.triangles / 1000),
+        note,
+      });
     } catch (e) {
       steps.push({ name, lit: 0, of: 9, note: `threw: ${(e as Error).message}` });
     }
@@ -146,13 +158,102 @@ export function runSelfTest(
   instScene.add(dir2);
   run('instanced lit boxes', () => renderer.render(instScene, persp));
 
-  // 7. The real scene, shadows off — separates content from the shadow pass.
+  // 6b. The game's own atlas material on a plain box. Nothing above this point
+  // samples a texture at all, and a texture that uploads as zeros samples to
+  // black while leaving the sky and every untextured test perfectly correct —
+  // so a failure here and a pass at 'instanced lit boxes' means the atlas, not
+  // the pipeline.
+  let atlas: MeshStandardMaterial | undefined;
+  gameScene.traverse((o) => {
+    if (atlas) return;
+    const mat = (o as Mesh).material as MeshStandardMaterial | undefined;
+    if (mat && (mat as MeshStandardMaterial).isMeshStandardMaterial && mat.map) atlas = mat;
+  });
+  if (atlas) {
+    const texScene = new Scene();
+    texScene.add(new Mesh(new BoxGeometry(40, 40, 40), atlas));
+    texScene.add(new AmbientLight(0xffffff, 2));
+    const dir3 = new DirectionalLight(0xffffff, 2);
+    dir3.position.set(1, 2, 3);
+    texScene.add(dir3);
+    const img = atlas.map!.image as { width?: number; height?: number } | undefined;
+    run(
+      'textured box (game atlas)',
+      () => renderer.render(texScene, persp),
+      `${img?.width ?? '?'}x${img?.height ?? '?'} mips=${atlas.map!.generateMipmaps}`
+    );
+  } else {
+    steps.push({ name: 'textured box (game atlas)', lit: 0, of: 9, note: 'no atlas found' });
+  }
+
+  // ── the real scene, taken apart ─────────────────────────────────────────
+  // A draw-call count of 0 means everything was culled; a healthy count with a
+  // black frame means it drew and the pixels came out black. Those are entirely
+  // different bugs and the pixel sample alone cannot tell them apart.
   renderer.shadowMap.enabled = false;
+  const city = gameScene.getObjectByName('city');
+  const kids = gameScene.children.slice();
+  const cityKids = city ? city.children.slice() : [];
+  const wasVisible = kids.map((k) => k.visible);
+  const wasCityVisible = cityKids.map((k) => k.visible);
+
+  // Lights are never hidden. Hiding them would make every MeshStandardMaterial
+  // render black and turn each of these steps into a false failure.
+  const isLight = (o: { type: string }) => /Light/.test(o.type) || o.type === 'Object3D';
+  const only = (names: string[]) => {
+    for (const k of kids) k.visible = isLight(k) || names.includes(k.name);
+    if (city) city.visible = names.includes('city');
+    for (const k of cityKids) k.visible = names.includes(k.name);
+  };
+  const restore = () => {
+    for (let i = 0; i < kids.length; i++) kids[i].visible = wasVisible[i];
+    for (let i = 0; i < cityKids.length; i++) cityKids[i].visible = wasCityVisible[i];
+  };
+
+  // Background and clear only — all geometry hidden, lights left alone. This
+  // must come out sky blue. If it is black, the scene's own clear is failing
+  // and nothing below it means anything.
+  only([]);
+  run('game: background only', () => renderer.render(gameScene, gameCamera));
+
+  // Then one piece of the city at a time. 'ground' is a single merged mesh,
+  // 'roads' and 'props' are instanced, 'buildings' and 'surround' are the big
+  // distant geometry — each fails for a different reason.
+  for (const part of ['ground', 'roads', 'props', 'buildings', 'surround']) {
+    if (!cityKids.some((k) => k.name === part)) continue;
+    only(['city', part]);
+    run(`game: ${part}`, () => renderer.render(gameScene, gameCamera));
+  }
+
+  restore();
   run('game scene, no shadows', () => renderer.render(gameScene, gameCamera));
 
-  // 8. The real scene as shipped.
   renderer.shadowMap.enabled = true;
   run('game scene, shadows on', () => renderer.render(gameScene, gameCamera));
+
+  // A camera pointing somewhere unexpected would explain everything above.
+  const cp = gameCamera.position;
+  steps.push({
+    name: 'camera',
+    lit: 9,
+    of: 9,
+    note:
+      `pos ${cp.x.toFixed(0)},${cp.y.toFixed(0)},${cp.z.toFixed(0)} ` +
+      `aspect ${gameCamera.aspect.toFixed(2)} fov ${gameCamera.fov.toFixed(0)} ` +
+      `children ${kids.length}`,
+  });
+
+  // A drawing buffer that does not match the CSS box is its own class of black
+  // screen: correct pixels drawn somewhere the compositor never shows.
+  steps.push({
+    name: 'buffer',
+    lit: 9,
+    of: 9,
+    note:
+      `drawing ${gl.drawingBufferWidth}x${gl.drawingBufferHeight} ` +
+      `css ${renderer.domElement.clientWidth}x${renderer.domElement.clientHeight} ` +
+      `dpr ${(window.devicePixelRatio || 1).toFixed(2)}`,
+  });
 
   renderer.shadowMap.enabled = prevShadows;
   renderer.setClearColor(prevClear, prevAlpha);
@@ -168,8 +269,13 @@ export function showSelfTest(parent: HTMLElement, steps: SelfTestStep[], header:
     'font:13px/1.6 ui-monospace,monospace;padding:16px;overflow:auto;' +
     'white-space:pre-wrap;pointer-events:auto';
   const lines = steps.map((s) => {
-    const verdict = s.lit >= 5 ? 'PASS' : s.lit > 0 ? 'PART' : 'FAIL';
-    return `${verdict}  ${String(s.lit).padStart(2)}/9  ${s.name}${s.note ? `\n            ${s.note}` : ''}`;
+    const verdict = (s.name === 'camera' || s.name === 'buffer') ? '····' : s.lit >= 5 ? 'PASS' : s.lit > 0 ? 'PART' : 'FAIL';
+    const counts =
+      s.calls !== undefined ? ` [${s.calls} calls, ${s.tris}k tris]` : '';
+    return (
+      `${verdict} ${String(s.lit).padStart(2)}/9 ${s.name}${counts}` +
+      (s.note ? `\n         ${s.note}` : '')
+    );
   });
   panel.textContent = `RENDER SELF-TEST\n${header}\n\n${lines.join('\n')}\n\n` +
     `PASS = drew, FAIL = black, PART = partial.\n` +
