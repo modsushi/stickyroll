@@ -32,7 +32,7 @@ import { Results } from './ui/Results';
 import { el } from './ui/dom';
 
 /** Bumped by hand so a screenshot proves which build is being tested. */
-const BUILD = 'build 2026-08-17f';
+const BUILD = 'build 2026-08-17h';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;

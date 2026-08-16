@@ -97,6 +97,10 @@ class Sfx {
    * The pop itself: a sine whose pitch snaps *upward* into place under a very
    * short envelope, which is what the ear hears as a bubble bursting. A
    * downward bend would be a pluck, and a flat tone would be a beep.
+   *
+   * A drier version was tried — a noise-click transient over a fast *downward*
+   * sweep, aiming at bubble wrap rather than a bubble. That is also the recipe
+   * for a laser zap, and it duly sounded like one, so it was reverted.
    */
   private popBody(t: number, freq: number, peak: number, decay: number, chunky: boolean) {
     const a = audio;

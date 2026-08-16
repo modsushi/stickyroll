@@ -12,7 +12,7 @@ export class Boot {
     this.root = el('div', { id: 'boot' });
 
     const logo = el('div', { class: 'logo' });
-    logo.innerHTML = 'ROLL<br>MASTERS<small>stick the city to your ball</small>';
+    logo.innerHTML = 'ROLL<br>CITY<small>stick the city to your ball</small>';
 
     const bar = el('div', { class: 'bar' });
     this.fill = el('i');

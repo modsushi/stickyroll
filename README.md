@@ -1,4 +1,4 @@
-# Roll Masters
+# Roll City
 
 A chill, casual Katamari-style game for the browser. You drag a ball through a
 living city; anything smaller than the ball sticks to it, the ball grows in
