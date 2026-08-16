@@ -150,4 +150,37 @@ export class Renderer {
   get pixelRatio() {
     return this.dpr;
   }
+
+  /**
+   * A lost context is the other way to get a black canvas while the game keeps
+   * running — common on mobile when the OS reclaims GPU memory. Preventing the
+   * default lets the browser restore it; without that the canvas stays dead for
+   * the rest of the session with no clue why.
+   */
+  handleContextLoss(onLost?: (restored: boolean) => void) {
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      console.warn('[gl] context lost — waiting for restore');
+      onLost?.(false);
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      console.warn('[gl] context restored');
+      onLost?.(true);
+    });
+  }
+
+  /** One-line capability summary, for the perf overlay and bug reports. */
+  diagnostics(): string {
+    const gl = this.renderer.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    const device = dbg
+      ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)).slice(0, 38)
+      : 'unknown';
+    return [
+      `gl     ${this.renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL1'}`,
+      `gpu    ${device}`,
+      `quality ${this.quality}`,
+    ].join('\n');
+  }
 }

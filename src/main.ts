@@ -61,6 +61,12 @@ function resize() {
   renderer.resize(w, h);
   post.resize(w, h);
 }
+// A lost GL context leaves the canvas black while the game happily carries on,
+// which is indistinguishable from a rendering bug unless we say so.
+renderer.handleContextLoss((restored) => {
+  if (restored) resize();
+});
+
 addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 120));
 resize();
@@ -100,6 +106,10 @@ bus.on('pause', ({ paused }) => {
     pause.show();
   }
 });
+
+pause.describeRenderer = () =>
+  `${renderer.diagnostics()}\npost   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr 8-bit') : 'off'}` +
+  (post.failure ? `\n${post.failure}` : '');
 
 pause.onResume = () => {
   audio.duck(0);
@@ -183,7 +193,10 @@ const loop = new Loop(
         `props  ${s.props}\n` +
         `stuck  ${s.stuck} (${s.ballDrawCalls} dc)\n` +
         `tier   ${s.tier} r=${s.radius.toFixed(2)}\n` +
-        `parts  ${particles?.liveCount ?? 0}`;
+        `parts  ${particles?.liveCount ?? 0}\n` +
+        `post   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr (8-bit)') : 'off'}` +
+        (post.failure ? `\n       ${post.failure}` : '') +
+        `\n${renderer.diagnostics()}`;
     }
   }
 );

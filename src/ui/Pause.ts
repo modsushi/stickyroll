@@ -5,6 +5,9 @@ import { el } from './dom';
 
 export class Pause {
   private root: HTMLElement;
+  private diag: HTMLElement;
+  /** Set by main so the pause screen can report how the frame is being drawn. */
+  describeRenderer: () => string = () => '';
   onResume: () => void = () => {};
   onRestart: () => void = () => {};
   onCollection: () => void = () => {};
@@ -38,7 +41,13 @@ export class Pause {
     const row = el('div', { class: 'row' });
     row.append(restart, coll);
 
-    this.root.append(el('h1', {}, 'Paused'), music, sound, resume, row);
+    // Reachable on a phone, where there is no F3 key. If the canvas ever comes
+    // up black again this is the first thing worth reading.
+    this.diag = el('div', {
+      style: 'font-size:10px;opacity:.45;letter-spacing:.08em;white-space:pre;text-align:center',
+    });
+
+    this.root.append(el('h1', {}, 'Paused'), music, sound, resume, row, this.diag);
     parent.append(this.root);
   }
 
@@ -59,6 +68,7 @@ export class Pause {
   }
 
   show() {
+    this.diag.textContent = this.describeRenderer();
     this.root.classList.remove('hidden');
   }
 

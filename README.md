@@ -29,6 +29,23 @@ recreates `public/models`, and the dev server will answer requests made during
 that window with `index.html`. If the city comes up missing roads or buildings,
 restart the dev server.
 
+## If the canvas is black
+
+The game logic and the DOM HUD are independent of WebGL, so a failed render
+looks like a working game you cannot see — score ticks up, nothing is drawn.
+Pause: the bottom of the pause screen reports the GL version, GPU, quality tier
+and which render path is live (`hdr` / `ldr 8-bit` / `off`) plus any failure.
+
+The usual cause is the post-processing chain's offscreen buffers. Rendering
+*into* a half-float texture needs `EXT_color_buffer_float` (WebGL2) or
+`EXT_color_buffer_half_float` (WebGL1), and plenty of Android GPUs expose
+neither; the framebuffer comes back incomplete and draws nothing. `PostFX`
+probes for it at startup, falls back to 8-bit targets, and if even those fail it
+verifies the framebuffer on the first frame and drops to direct rendering.
+
+`?ldr=1` forces the 8-bit path on any device, for testing it without the
+hardware.
+
 ## Playing
 
 - **Touch/mouse:** drag anywhere to steer. The stick is anchor-relative and the

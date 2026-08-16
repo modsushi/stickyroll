@@ -26,13 +26,20 @@ import {
   RGBAFormat,
   Scene,
   ShaderMaterial,
+  type TextureDataType,
   Uniform,
+  UnsignedByteType,
   Vector2,
+  WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
 import type { Quality } from './Renderer';
 import type { Renderer } from './Renderer';
 
+// No `precision` declarations in any of these: three.js prepends one chosen
+// from the device's actual capabilities, and a hardcoded `highp` on top of it
+// fails to compile on GPUs that lack fragment highp — which shows up as a black
+// canvas with a perfectly healthy HUD.
 const VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -43,7 +50,6 @@ void main() {
 
 /** Isolates the bright parts that should bloom, with a soft knee. */
 const BRIGHT = /* glsl */ `
-precision highp float;
 varying vec2 vUv;
 uniform sampler2D tSrc;
 uniform float uThreshold;
@@ -62,7 +68,6 @@ void main() {
 
 /** Separable 9-tap gaussian; run twice for a full blur. */
 const BLUR = /* glsl */ `
-precision highp float;
 varying vec2 vUv;
 uniform sampler2D tSrc;
 uniform vec2 uDir;
@@ -78,7 +83,6 @@ void main() {
 `;
 
 const COMPOSITE = /* glsl */ `
-precision highp float;
 varying vec2 vUv;
 uniform sampler2D tScene;
 uniform sampler2D tBloom;
@@ -167,16 +171,57 @@ void main() {
 `;
 
 /**
- * Half-float throughout. The scene is rendered linear and un-tone-mapped, so
- * sunlit surfaces sit well above 1.0; an 8-bit target would clip them to white
- * and the bright-pass would have nothing left to bloom.
+ * Can this device actually *render into* a half-float texture?
+ *
+ * Sampling RGBA16F is widely supported; using one as a colour attachment is not.
+ * It needs `EXT_color_buffer_float` (WebGL2) or `EXT_color_buffer_half_float`
+ * (WebGL1), and a large slice of Android GPUs expose neither. Without the check
+ * every offscreen pass binds an incomplete framebuffer, which draws nothing —
+ * the game runs, the HUD updates, and the canvas stays black.
+ *
+ * The extension string alone isn't trusted: some drivers advertise it and still
+ * fail, so this allocates a 4x4 target and asks the driver directly.
  */
-function target(w: number, h: number, depth = false) {
+function supportsHalfFloatTargets(renderer: WebGLRenderer): boolean {
+  const gl = renderer.getContext();
+  const isWebGL2 = renderer.capabilities.isWebGL2;
+  const ext = isWebGL2
+    ? gl.getExtension('EXT_color_buffer_float') ?? gl.getExtension('EXT_color_buffer_half_float')
+    : gl.getExtension('EXT_color_buffer_half_float');
+  if (!ext) return false;
+
+  // Trust but verify: bind a real one and read the framebuffer status.
+  const probe = new WebGLRenderTarget(4, 4, {
+    type: HalfFloatType,
+    format: RGBAFormat,
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+  let ok = false;
+  try {
+    const prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(probe);
+    ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    renderer.setRenderTarget(prev);
+  } catch {
+    ok = false;
+  }
+  probe.dispose();
+  return ok;
+}
+
+/**
+ * The scene is rendered linear and un-tone-mapped, so sunlit surfaces sit well
+ * above 1.0 and half-float is the right storage. Where the device can't render
+ * to it we fall back to 8-bit, which clips highlights and bands the darks a
+ * little — a real but modest quality cost, and the alternative is no picture.
+ */
+function target(w: number, h: number, type: TextureDataType, depth = false) {
   return new WebGLRenderTarget(Math.max(1, w), Math.max(1, h), {
     minFilter: LinearFilter,
     magFilter: LinearFilter,
     format: RGBAFormat,
-    type: HalfFloatType,
+    type,
     colorSpace: LinearSRGBColorSpace,
     depthBuffer: depth,
     stencilBuffer: false,
@@ -205,6 +250,13 @@ export class PostFX {
   private h = 1;
   private flash = 0;
   enabled = true;
+  /** Storage type actually used for the offscreen passes. */
+  private targetType: TextureDataType = HalfFloatType;
+  /** True when the device forced us onto 8-bit targets. Surfaced in the HUD. */
+  readonly hdr: boolean;
+  private verified = false;
+  /** Set when the offscreen path had to be abandoned; shown in diagnostics. */
+  failure: string | null = null;
 
   constructor(
     private r: Renderer,
@@ -212,13 +264,20 @@ export class PostFX {
   ) {
     this.fsScene.add(this.quad);
 
+    const forceLdr =
+      typeof location !== 'undefined' && /[?&]ldr=1/.test(location.search);
+    this.hdr = !forceLdr && supportsHalfFloatTargets(r.renderer);
+    this.targetType = this.hdr ? HalfFloatType : UnsignedByteType;
+
     this.brightMat = new ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: BRIGHT,
       uniforms: {
         tSrc: new Uniform(null),
-        uThreshold: new Uniform(1.05),
-        uKnee: new Uniform(0.5),
+        // On 8-bit targets everything clips at 1.0, so an HDR threshold above
+        // 1 would select nothing and the bloom would silently vanish.
+        uThreshold: new Uniform(this.hdr ? 1.05 : 0.62),
+        uKnee: new Uniform(this.hdr ? 0.5 : 0.22),
       },
       depthTest: false,
       depthWrite: false,
@@ -271,18 +330,19 @@ export class PostFX {
     this.h = ph;
 
     for (const t of [this.scene, this.bright, this.blurA, this.blurB, this.soft]) t?.dispose();
+    this.verified = false;
 
-    this.scene = target(pw, ph, true);
+    this.scene = target(pw, ph, this.targetType, true);
     // Bloom at quarter res: at this art style nobody can tell, and it's 16x
     // fewer pixels through the blur.
     const bw = Math.max(1, pw >> 2);
     const bh = Math.max(1, ph >> 2);
-    this.bright = target(bw, bh);
-    this.blurA = target(bw, bh);
-    this.blurB = target(bw, bh);
+    this.bright = target(bw, bh, this.targetType);
+    this.blurA = target(bw, bh, this.targetType);
+    this.blurB = target(bw, bh, this.targetType);
     // The tilt-shift blur is separate and lower-res still; it's only ever seen
     // through a heavy mix so resolution genuinely doesn't matter.
-    this.soft = target(Math.max(1, pw >> 2), Math.max(1, ph >> 2));
+    this.soft = target(Math.max(1, pw >> 2), Math.max(1, ph >> 2), this.targetType);
   }
 
   /** Full-screen colour flash, used on tier-ups. */
@@ -296,9 +356,36 @@ export class PostFX {
     this.r.renderer.render(this.fsScene, this.fsCam);
   }
 
+  /**
+   * Confirms the offscreen path actually works, once, on the first real frame.
+   *
+   * The capability probe covers the known failure, but drivers are inventive.
+   * A silent black screen is the worst possible outcome — the game is running
+   * and responding, so nothing looks broken except everything — so if the scene
+   * target is not complete we drop to direct rendering and say why. Reduced
+   * effects beat no picture.
+   */
+  private verify(): void {
+    this.verified = true;
+    const renderer = this.r.renderer;
+    const gl = renderer.getContext();
+    const prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(this.scene);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    renderer.setRenderTarget(prev);
+
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      this.enabled = false;
+      this.failure = `offscreen framebuffer incomplete (0x${status.toString(16)})`;
+      console.warn(`[postfx] disabled: ${this.failure} — rendering without effects`);
+    }
+  }
+
   render() {
     const gl = this.r.renderer;
     gl.info.reset();
+
+    if (!this.verified) this.verify();
 
     if (!this.enabled) {
       gl.setRenderTarget(null);
