@@ -36,6 +36,18 @@ looks like a working game you cannot see — score ticks up, nothing is drawn.
 Pause: the bottom of the pause screen reports the GL version, GPU, quality tier
 and which render path is live (`hdr` / `ldr 8-bit` / `off`) plus any failure.
 
+**Check the browser before the GPU.** The first real instance of this was not a
+graphics problem at all: Chrome for Android's *Auto Dark Theme for web contents*
+applies a compositor-level darkening filter to pages that have not declared a
+colour scheme, and it blacks out the WebGL canvas while leaving the DOM HUD
+looking perfectly normal. The give-away is that it is browser-specific — the same
+page on the same device was fine in Samsung Internet and on iOS Safari, and every
+in-page GL diagnostic reported healthy, because the rendering *was* healthy.
+
+The opt-out is declaring a colour scheme, which this project does twice: a
+`<meta name="color-scheme">` in `index.html` (applies before CSS loads) and
+`color-scheme: dark` on `:root`. Don't remove either.
+
 **Only one WebGL context, ever.** Browsers cap the number of live contexts and
 on mobile creating a second one can evict the first — which kills the game's
 canvas while the DOM HUD carries on as though nothing happened. The collection

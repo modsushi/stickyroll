@@ -7,6 +7,16 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#1b1030" />
+    <!--
+      Opts out of Chrome for Android's "Auto Dark Theme for web contents".
+      That feature applies a compositor-level darkening filter to any page that
+      has not declared it handles dark mode itself, and it blacks out the WebGL
+      canvas while leaving the DOM HUD looking fine — a black game with a working
+      score, on Chrome only, on a device where every other browser is correct.
+      Declaring a colour scheme is the documented way to be left alone; this UI
+      is dark by design regardless.
+    -->
+    <meta name="color-scheme" content="dark light" />
     <meta name="description" content="Roll Masters — roll a ball through the city and stick the whole place to it." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Roll Masters</title>

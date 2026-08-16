@@ -22,6 +22,11 @@
 }
 
 :root {
+  /* Pairs with the <meta name="color-scheme"> in index.html. Both are needed:
+     the meta tag applies before CSS loads, this covers the rest. Without it
+     Chrome for Android force-darkens the page and the canvas renders black. */
+  color-scheme: dark;
+
   --gold: #ffc93c;
   --gold-deep: #e08a12;
   --purple: #6b3fa0;
