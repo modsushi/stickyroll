@@ -51,6 +51,15 @@ export class Game {
   timeLeft = 0;
   private lastCountdown = -1;
 
+  /**
+   * Debug autopilot, used by `fastForward` to reach a high tier for profiling.
+   * Steers the ball directly in world space, bypassing input and the camera's
+   * screen-to-world mapping.
+   */
+  private autopilot = false;
+  private apTarget = new Vector3();
+  private apLeg = 0;
+
   constructor(
     private renderer: Renderer,
     private input: Input
@@ -150,8 +159,12 @@ export class Game {
   step(dt: number) {
     if (this.state !== 'playing') return;
 
-    this.input.direction(_dirScreen);
-    this.camera.screenToWorld(_dirScreen.x, _dirScreen.y, _dirWorld);
+    if (this.autopilot) {
+      this.autopilotDir(_dirWorld);
+    } else {
+      this.input.direction(_dirScreen);
+      this.camera.screenToWorld(_dirScreen.x, _dirScreen.y, _dirWorld);
+    }
     this.ball.step(_dirWorld, dt);
 
     const b = this.city.bounds;
@@ -183,6 +196,119 @@ export class Game {
     if (this.timeLeft <= 0) this.end();
   }
 
+  /**
+   * Steers toward the nearest thing the ball can currently eat, falling back to
+   * a lawnmower sweep when the area is picked clean.
+   *
+   * Hunting rather than sweeping matters: a fixed sweep spends most of its time
+   * crossing ground it has already cleared, and could not reach even tier 1 in
+   * 300 simulated seconds. This reaches the top tiers in a time comparable to a
+   * competent player, which is the state worth profiling.
+   */
+  private autopilotDir(out: Vector3) {
+    const r = this.ball.growth.radius;
+    let bestX = 0;
+    let bestZ = 0;
+    let found = false;
+    let bestD = Infinity;
+    this.city.hash.query(this.ball.pos.x, this.ball.pos.z, 22, (p) => {
+      if (p.absorbed || p.blocker || p.def.absorbSize > r) return;
+      const dx = p.x - this.ball.pos.x;
+      const dz = p.z - this.ball.pos.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        bestX = p.x;
+        bestZ = p.z;
+        found = true;
+      }
+    });
+
+    if (found) {
+      out.set(bestX - this.ball.pos.x, 0, bestZ - this.ball.pos.z);
+    } else {
+      const b = this.city.bounds;
+      const inset = 6;
+      if (this.ball.pos.distanceTo(this.apTarget) < 4 || this.apLeg === 0) {
+        const legs = 12;
+        const i = this.apLeg % (legs * 2);
+        const row = Math.floor(i / 2);
+        const z = b.minZ + inset + ((b.maxZ - b.minZ - inset * 2) * row) / (legs - 1);
+        const x = i % 2 === 0 ? b.minX + inset : b.maxX - inset;
+        this.apTarget.set(x, 0, z);
+        this.apLeg++;
+      }
+      out.copy(this.apTarget).sub(this.ball.pos);
+      out.y = 0;
+    }
+    if (out.lengthSq() > 1e-6) out.normalize();
+  }
+
+  /**
+   * Debug only: drives the real simulation until the ball reaches `tier`.
+   *
+   * Deliberately runs the actual step/render loop rather than just setting a
+   * radius, because the expensive things at high tiers — chunk consolidation,
+   * pruning, batch state, the absorbed-prop count — are all produced by the
+   * real path. A ball that merely *claims* to be tier 8 would profile nothing.
+   */
+  fastForward(tier: number, maxSeconds = 2400): { seconds: number; tier: number } {
+    if (this.state !== 'playing') return { seconds: 0, tier: this.ball.growth.tier };
+    const dt = 1 / 120;
+    const frozen = this.timeLeft;
+    this.autopilot = true;
+    this.apLeg = 0;
+
+    let elapsed = 0;
+    let starved = 0;
+    let lastMass = -1;
+    while (this.ball.growth.tier < tier && elapsed < maxSeconds) {
+      // The ball can wedge against a building with its target unreachable, and
+      // then eats nothing for the rest of the budget. When no mass has been
+      // gained for a few seconds, relocate it onto something it can still eat.
+      // Teleporting is fine here — this is a profiling harness, and everything
+      // already absorbed (which is what we are profiling) is preserved.
+      if (this.ball.growth.mass === lastMass) {
+        if (++starved > 120 * 3) {
+          if (!this.relocateToFood()) break; // nothing edible left anywhere
+          starved = 0;
+        }
+      } else {
+        starved = 0;
+        lastMass = this.ball.growth.mass;
+      }
+      this.step(dt);
+      // Render-rate work too: pop-in animations retire props into chunks here,
+      // and skipping it would leave the ball's geometry in an unreal state.
+      this.render(dt);
+      this.timeLeft = frozen; // the clock must not run out mid fast-forward
+      elapsed += dt;
+    }
+
+    this.autopilot = false;
+    this.timeLeft = frozen;
+    return { seconds: elapsed, tier: this.ball.growth.tier };
+  }
+
+  /** Debug: drops the ball onto a random prop it can still absorb. */
+  private relocateToFood(): boolean {
+    const r = this.ball.growth.radius;
+    const candidates: { x: number; z: number }[] = [];
+    for (const list of this.city.byProp.values()) {
+      for (const p of list) {
+        if (p.absorbed || p.def.absorbSize > r) continue;
+        candidates.push({ x: p.x, z: p.z });
+      }
+      if (candidates.length > 400) break;
+    }
+    if (!candidates.length) return false;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    this.ball.pos.set(pick.x, this.ball.pos.y, pick.z);
+    this.ball.vel.set(0, 0, 0);
+    this.apLeg = 0;
+    return true;
+  }
+
   private onTierUp(tier: number) {
     const prev = TIERS[Math.max(0, tier - 1)].radius;
     this.baker.prune(TIERS[tier].radius);
@@ -195,7 +321,7 @@ export class Game {
   /** Render-rate update: visuals only, safe to run at any framerate. */
   render(dt: number) {
     this.ball.render(dt);
-    this.baker?.update(dt);
+    this.baker?.update(dt, this.ball.growth.radius);
     this.camera.update(this.ball.pos, this.ball.vel, this.ball.visualRadius, dt);
     this.renderer.focusShadow(this.ball.pos, this.ball.visualRadius);
     this.traffic?.render(dt);

@@ -44,6 +44,8 @@ export class Renderer {
   private maxDpr: number;
   private dpr: number;
   private slowFrames = 0;
+  /** Alternates so the shadow map refreshes every other frame. */
+  private shadowPhase = 0;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality) {
     this.quality = quality;
@@ -73,6 +75,14 @@ export class Renderer {
     this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFShadowMap;
+    // Driven by hand from `focusShadow`, so the map can be refreshed on
+    // alternate frames. The shadow pass measured up to 61% of the frame at the
+    // top tiers, and it is dominated by filling a 1536² depth map rather than
+    // by the casters in it — tightening the frustum barely moved it. The sun is
+    // fixed and everything that casts moves slowly relative to a 60 Hz frame,
+    // so a one-frame-old shadow map is indistinguishable in motion and costs
+    // half as much.
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.setClearColor(0x74c4e8);
 
     this.maxDpr = quality === 'high' ? 2 : 1.35;
@@ -121,13 +131,22 @@ export class Renderer {
    * interesting area is still under 40 units across.
    */
   focusShadow(target: Vector3, radius: number) {
+    this.renderer.shadowMap.needsUpdate = (this.shadowPhase++ & 1) === 0;
     // Capped on purpose. Letting the frustum track the ball's full framing means
     // that at max size it covers a 100 m box — most of the district — and every
     // building, car and prop inside it is redrawn into the shadow map every
     // frame. Beyond ~35 m the shadows are a few pixels each and the fog and
     // tilt-shift are eating them anyway, so the cap costs nothing visible and
     // roughly halves the shadow pass late in a run.
-    const extent = Math.min(20 + radius * 5.5, 38);
+    //
+    // Profiling at tier 8 put the shadow pass at up to 45% of the whole frame,
+    // by far the largest single slice, so the cap is tighter than the framing
+    // would suggest. At the top tiers the camera sits ~55 m up: a shadow 30 m
+    // from the ball is a handful of pixels behind fog and tilt-shift, while the
+    // area it covers is quadratic in the extent. Halving 38 to 26 removes over
+    // half the casters and also sharpens what remains, since the same shadow
+    // map now covers a smaller patch of ground.
+    const extent = Math.min(20 + radius * 5.5, 26);
     const c = this.sun.shadow.camera;
     if (c.right !== extent) {
       c.left = -extent;

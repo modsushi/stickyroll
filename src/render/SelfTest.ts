@@ -635,7 +635,11 @@ export function runSelfTest(
 
 
   renderer.shadowMap.enabled = true;
-  run('game scene, shadows on', () => renderer.render(gameScene, gameCamera));
+  run('game scene, shadows on', () => {
+    // Shadow updates are hand-driven, so ask for one explicitly.
+    renderer.shadowMap.needsUpdate = true;
+    renderer.render(gameScene, gameCamera);
+  });
 
   // A camera pointing somewhere unexpected would explain everything above.
   const cp = gameCamera.position;

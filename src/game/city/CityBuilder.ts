@@ -30,6 +30,7 @@ import { makeLit } from '../../render/litMaterial';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { assets } from '../../core/Assets';
 import { Rand, clamp } from '../../core/Math';
+import { toggle } from '../../core/Debug';
 import { PROPS, prop, type PropDef } from '../../data/props';
 import type { LevelDef, TileChar } from '../../levels/types';
 import { SpatialHash } from '../SpatialHash';
@@ -41,6 +42,9 @@ const _q = new Quaternion();
 const _s = new Vector3(1, 1, 1);
 
 const isRoad = (c: string) => c === '#' || c === 'X';
+
+/** Fog colour the distant skyline washes toward, matching Renderer's fog. */
+const HORIZON_HAZE = new Color(0x9fd8ee);
 
 /**
  * Radius around the spawn kept free of anything the starting ball can't move.
@@ -383,10 +387,17 @@ export class CityBuilder {
     // Skyline beyond the wall. Placed on a ring grid and jittered so it reads as
     // a city rather than a fence of towers, and scaled up because these are
     // meant to be read at 100+ metres.
-    const models = spec.skyline.models.filter((m) => assets.has(spec.skyline.kit, m));
+    //
+    // Currently defaulted OFF at the user's request so the map can be judged
+    // without it; `?skyline=1` brings it back. Flip the fallback here to make it
+    // permanent again.
+    const models = toggle('skyline', false)
+      ? spec.skyline.models.filter((m) => assets.has(spec.skyline.kit, m))
+      : [];
     if (models.length) {
       const towers: {
         kit: string; model: string; x: number; z: number; rotY: number; scale: number;
+        ring: number;
       }[] = [];
       const step = 16;
       for (let ring = 0; ring < spec.skylineRings; ring++) {
@@ -410,25 +421,108 @@ export class CityBuilder {
               rotY: this.rand.int(0, 3) * (Math.PI / 2),
               // Further rings are taller, so the horizon rises away from you.
               scale: this.rand.range(1.1, 1.7) + ring * 0.45,
+              ring,
             });
           }
         }
       }
-      const sky = chunkedScenery(towers, 0);
-      sky.group.name = 'skyline';
-      // Nothing out here can be reached, so nothing out here needs a shadow.
-      sky.group.traverse((o) => {
+      // Only the innermost ring keeps its real geometry. Standing at the map
+      // edge you are barely 9 m from it, close enough that a flat box reads as
+      // a blank slab rather than a building; the outer rings are 25 m and 41 m
+      // further again, where the silhouette is all that survives.
+      const near = towers.filter((t) => t.ring === 0);
+      const far = towers.filter((t) => t.ring > 0);
+
+      const detailed = chunkedScenery(near, 0);
+      detailed.group.name = 'skyline-near';
+      detailed.group.traverse((o) => {
         const m = o as Mesh;
         if (m.isMesh) {
           m.castShadow = false;
           m.receiveShadow = false;
         }
       });
-      g.add(sky.group);
-      drawCalls += sky.batches;
+      g.add(detailed.group);
+      drawCalls += detailed.batches;
+
+      const sky = this.buildSkylineImpostors(far);
+      sky.name = 'skyline';
+      g.add(sky);
+      drawCalls += 1;
     }
 
     return { group: g, drawCalls };
+  }
+
+  /**
+   * The horizon, as boxes rather than buildings.
+   *
+   * The skyline sat 100 m+ beyond a wall the player cannot cross, yet it was
+   * ~125 detailed skyscrapers: 74k triangles across 4 draw calls that were
+   * never frustum-culled, drawn every frame at every tier — around a quarter of
+   * the scene's triangles for something that only ever reads as a silhouette.
+   *
+   * Each tower becomes a single box coloured from its model's own average
+   * vertex colour, so the horizon keeps its palette and its varied heights.
+   * That is ~12 triangles apiece instead of ~590, welded into one mesh.
+   */
+  private buildSkylineImpostors(
+    towers: {
+      kit: string; model: string; x: number; z: number; rotY: number; scale: number; ring: number;
+    }[]
+  ): Group {
+    const g = new Group();
+    const parts: BufferGeometry[] = [];
+    const tint = new Color();
+
+    for (const t of towers) {
+      if (!assets.has(t.kit as never, t.model)) continue;
+      const src = assets.get(t.kit as never, t.model);
+      const w = src.size.x * t.scale;
+      const h = src.size.y * t.scale;
+      const d = src.size.z * t.scale;
+
+      const box = new BoxGeometry(w, h, d);
+      // Boxes are built centred; lift so the base sits on the ground.
+      box.translate(0, h / 2, 0);
+      box.rotateY(t.rotY);
+      box.translate(t.x, 0, t.z);
+
+      // Sample the model's own colours so the horizon keeps the kit's palette
+      // instead of turning into a row of grey slabs. Textured kits carry no
+      // vertex colours, so a little per-tower variation and a wash toward the
+      // fog colour with distance does the work the lost detail used to.
+      averageColor(src.geometry, tint);
+      const v = 0.82 + this.rand.next() * 0.30;
+      tint.setRGB(tint.r * v, tint.g * v, tint.b * v);
+      const haze = Math.min(0.55, 0.18 * t.ring);
+      tint.lerp(HORIZON_HAZE, haze);
+      const count = box.attributes.position.count;
+      const arr = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        arr[i * 3] = tint.r;
+        arr[i * 3 + 1] = tint.g;
+        arr[i * 3 + 2] = tint.b;
+      }
+      box.setAttribute('color', new BufferAttribute(arr, 3));
+      parts.push(box);
+    }
+
+    if (!parts.length) return g;
+    const merged = BufferGeometryUtils.mergeGeometries(parts, false);
+    for (const p of parts) p.dispose();
+    if (!merged) return g;
+
+    const mesh = new Mesh(
+      merged,
+      makeLit({ vertexColors: true, roughness: 0.95, metalness: 0 })
+    );
+    // Nothing out here can be reached, so nothing out here needs a shadow.
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false; // the horizon is visible from everywhere anyway
+    g.add(mesh);
+    return g;
   }
 
   // ── roads ───────────────────────────────────────────────────────────────
@@ -834,3 +928,28 @@ export class CityBuilder {
 }
 
 const UP = new Vector3(0, 1, 0);
+
+/**
+ * Mean vertex colour of a geometry, falling back to sampling nothing when the
+ * kit is textured rather than vertex-coloured.
+ *
+ * Textured kits carry no `color` attribute, so the atlas cannot be averaged
+ * cheaply here; a neutral concrete tone stands in, which is what the distant
+ * towers read as anyway.
+ */
+function averageColor(geo: BufferGeometry, out: Color): Color {
+  const attr = geo.getAttribute('color');
+  if (!attr || attr.count === 0) return out.setRGB(0.62, 0.66, 0.72);
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  const step = Math.max(1, Math.floor(attr.count / 64));
+  let n = 0;
+  for (let i = 0; i < attr.count; i += step) {
+    r += attr.getX(i);
+    g += attr.getY(i);
+    b += attr.getZ(i);
+    n++;
+  }
+  return out.setRGB(r / n, g / n, b / n);
+}

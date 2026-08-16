@@ -21,6 +21,8 @@ import { TIERS } from './game/Growth';
 import { detectQuality, Renderer } from './render/Renderer';
 import { PostFX } from './render/PostFX';
 import { runBench, showBench } from './render/Bench';
+import { FlyCamera } from './render/FlyCamera';
+import { on, param } from './core/Debug';
 import { runSelfTest, showSelfTest } from './render/SelfTest';
 import { Boot } from './ui/Boot';
 import { Collection } from './ui/Collection';
@@ -30,7 +32,7 @@ import { Results } from './ui/Results';
 import { el } from './ui/dom';
 
 /** Bumped by hand so a screenshot proves which build is being tested. */
-const BUILD = 'build 2026-08-16n';
+const BUILD = 'build 2026-08-17c';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -51,6 +53,7 @@ const hud = new Hud(uiRoot, game);
 const pause = new Pause(uiRoot);
 const results = new Results(uiRoot);
 const collection = new Collection(uiRoot, renderer);
+const fly = new FlyCamera(renderer.camera, canvas);
 hud.stickState = () => input.stick;
 
 // ── perf overlay (F3) ─────────────────────────────────────────────────────
@@ -208,6 +211,12 @@ const loop = new Loop(
       }
     }
 
+    // After game.render, so it overwrites the follow camera's transform.
+    if (fly.enabled) {
+      input.enabled = false; // restart() re-enables input, so hold it down here
+      fly.update(dt);
+    }
+
     hud.update(dt, renderer.camera);
     post.render();
     // Verify by result, not by capability: read back what was actually drawn
@@ -229,7 +238,8 @@ const loop = new Loop(
         `parts  ${particles?.liveCount ?? 0}\n` +
         `post   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr (8-bit)') : 'off'}` +
         (post.failure ? `\n       ${post.failure}` : '') +
-        `\n${renderer.diagnostics()}`;
+        `\n${renderer.diagnostics()}` +
+        (fly.enabled ? `\n${fly.describe()}` : '');
     }
   }
 );
@@ -246,9 +256,78 @@ const loop = new Loop(
   // GPU time rather than command submission alone.
   if (/[?&]bench=1/.test(location.search)) {
     loop.stop();
-    const r = runBench(renderer.renderer, renderer.scene, renderer.camera);
-    showBench(uiRoot, r, `${BUILD}\n${renderer.diagnostics().replace(/\n/g, ' | ')}`);
+    // `&tier=N` drives the real simulation up to that tier first, so the ball
+    // carries genuine absorbed geometry rather than merely claiming a radius.
+    const want = /[?&]tier=(\d)/.exec(location.search);
+    let ff = { seconds: 0, tier: 0 };
+    if (want) {
+      game.start(); // fastForward only runs the sim while the game is playing
+      const cap = /[?&]ffmax=(\d+)/.exec(location.search);
+      ff = game.fastForward(parseInt(want[1], 10), cap ? parseInt(cap[1], 10) : undefined);
+      game.camera.snapTo(game.ball.pos, game.ball.visualRadius);
+      renderer.focusShadow(game.ball.pos, game.ball.visualRadius);
+    }
+    const r = runBench(renderer.renderer, renderer.scene, renderer.camera, {
+      tier: ff.tier,
+      ball: game.ball.spinner as never,
+      // The same work the real loop does, so the number matches what the player
+      // feels rather than just the scene draw.
+      frame: (dt) => {
+        game.step(dt);
+        game.render(dt);
+        post.render();
+      },
+    });
+    showBench(
+      uiRoot,
+      r,
+      `${BUILD}\n${renderer.diagnostics().replace(/\n/g, ' | ')}` +
+        (want ? `\nfast-forward ${ff.seconds.toFixed(0)}s sim -> tier ${ff.tier}` : '')
+    );
     return;
+  }
+
+  // `?tier=N` on its own fast-forwards then hands control back, for eyeballing
+  // how the ball and city look at a high tier without playing there.
+  const jump = /[?&]tier=(\d)/.exec(location.search);
+  if (jump && !/[?&]bench=1/.test(location.search)) {
+    game.start();
+    game.fastForward(parseInt(jump[1], 10));
+    // The fast-forward relocates the ball to wherever the food was, which can
+    // be tucked behind a tower. Park it back at the open start point so the
+    // grown ball is actually visible.
+    const at = /[?&]at=edge/.test(location.search);
+    game.ball.pos.set(
+      at ? game.city.bounds.minX + 10 : game.city.start.x,
+      game.ball.visualRadius,
+      at ? game.city.bounds.minZ + 10 : game.city.start.z
+    );
+    game.ball.vel.set(0, 0, 0);
+    game.camera.snapTo(game.ball.pos, game.ball.visualRadius);
+  }
+
+  // `?fly=1` frees the camera from the ball for inspecting the level.
+  if (on('fly')) {
+    fly.attach();
+    const sp = param('flyspeed');
+    if (sp) fly.speed = parseFloat(sp);
+    // Exposed so the camera can be driven or inspected from the console.
+    (window as unknown as { fly: FlyCamera }).fly = fly;
+    perfOn = true; // the overlay carries the fly controls hint
+    perf.classList.add('on');
+    uiRoot.append(
+      el(
+        'div',
+        {
+          style:
+            'position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:200;' +
+            'background:rgba(12,10,24,.82);color:#e8e8f0;font:11px/1.6 ui-monospace,monospace;' +
+            'padding:8px 14px;border-radius:10px;text-align:center;pointer-events:none',
+        },
+        'FLY  ·  click to capture mouse, Esc to release  ·  WASD move  ·  ' +
+          'Space/E up, Q/C down  ·  Shift fast, Alt slow  ·  wheel speed'
+      )
+    );
   }
 
   // `?selftest=1` bisects the render path on the device and prints the result.
