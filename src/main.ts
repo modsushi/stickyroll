@@ -20,12 +20,16 @@ import { Game } from './game/Game';
 import { TIERS } from './game/Growth';
 import { detectQuality, Renderer } from './render/Renderer';
 import { PostFX } from './render/PostFX';
+import { runSelfTest, showSelfTest } from './render/SelfTest';
 import { Boot } from './ui/Boot';
 import { Collection } from './ui/Collection';
 import { Hud } from './ui/Hud';
 import { Pause } from './ui/Pause';
 import { Results } from './ui/Results';
 import { el } from './ui/dom';
+
+/** Bumped by hand so a screenshot proves which build is being tested. */
+const BUILD = 'build 2026-08-16d';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -131,7 +135,7 @@ bus.on('pause', ({ paused }) => {
 });
 
 pause.describeRenderer = () =>
-  `${renderer.diagnostics()}\npost   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr 8-bit') : 'off'}` +
+  `${BUILD}\n${renderer.diagnostics()}\npost   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr 8-bit') : 'off'}` +
   (post.checkLog.length ? `\ncheck  ${post.checkLog.join(' | ')}` : '') +
   (post.failure ? `\n${post.failure}` : '') +
   (glLost ? '\nGL CONTEXT LOST' : '');
@@ -236,6 +240,14 @@ const loop = new Loop(
   await game.load((p) => boot.setProgress(p * 0.92));
   game.begin();
   paintCards();
+
+  // `?selftest=1` bisects the render path on the device and prints the result.
+  if (/[?&]selftest=1/.test(location.search)) {
+    loop.stop();
+    const steps = runSelfTest(renderer.renderer, renderer.scene, renderer.camera);
+    showSelfTest(uiRoot, steps, `${BUILD}\n${renderer.diagnostics().replace(/\n/g, ' | ')}`);
+    return;
+  }
   boot.setProgress(1);
   boot.ready(TIERS.length);
 
