@@ -61,9 +61,27 @@ function resize() {
   renderer.resize(w, h);
   post.resize(w, h);
 }
-// A lost GL context leaves the canvas black while the game happily carries on,
-// which is indistinguishable from a rendering bug unless we say so.
+/**
+ * A lost GL context is invisible from the inside: every GL call becomes a no-op,
+ * so the canvas keeps whatever it last held (black) while the loop, the audio
+ * and the whole DOM HUD carry on perfectly. Without an explicit banner that is
+ * indistinguishable from a rendering bug, so say it out loud on screen.
+ */
+let glLost = false;
+const glBanner = el('div', {
+  style:
+    'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:200;' +
+    'background:#b3261e;color:#fff;font:12px/1.5 ui-monospace,monospace;' +
+    'padding:8px 14px;border-radius:10px;display:none;text-align:center;max-width:90vw',
+});
+uiRoot.append(glBanner);
+
 renderer.handleContextLoss((restored) => {
+  glLost = !restored;
+  glBanner.style.display = restored ? 'none' : 'block';
+  glBanner.textContent = restored
+    ? ''
+    : 'Graphics context lost — the page needs a reload.';
   if (restored) resize();
 });
 
@@ -109,7 +127,8 @@ bus.on('pause', ({ paused }) => {
 
 pause.describeRenderer = () =>
   `${renderer.diagnostics()}\npost   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr 8-bit') : 'off'}` +
-  (post.failure ? `\n${post.failure}` : '');
+  (post.failure ? `\n${post.failure}` : '') +
+  (glLost ? '\nGL CONTEXT LOST' : '');
 
 pause.onResume = () => {
   audio.duck(0);

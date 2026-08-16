@@ -14,14 +14,22 @@ import {
 
 export type Quality = 'low' | 'high';
 
-/** Cheap device probe: shadow and post budgets differ enormously by class. */
+/**
+ * Cheap device probe: shadow and post budgets differ enormously by class.
+ *
+ * Any touch device takes the light path. A modern phone reports 8 cores and 8 GB
+ * and looks like a desktop to a spec sheet, but its GPU and thermal budget are
+ * nothing alike — and MSAA plus a 1536px shadow map plus a full post chain is
+ * exactly the combination that pushes mobile drivers into trouble.
+ */
 export function detectQuality(): Quality {
-  const mem = (navigator as { deviceMemory?: number }).deviceMemory ?? 4;
-  const cores = navigator.hardwareConcurrency ?? 4;
-  const coarse = matchMedia('(pointer: coarse)').matches;
-  if (coarse && (mem <= 4 || cores <= 4)) return 'low';
-  return 'high';
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  return coarse ? 'low' : 'high';
 }
+
+/** True for phones and tablets; used to pick conservative context options. */
+const isTouchDevice = () =>
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 export class Renderer {
   readonly renderer: WebGLRenderer;
@@ -41,9 +49,15 @@ export class Renderer {
     this.renderer = new WebGLRenderer({
       canvas,
       antialias: quality === 'high',
-      powerPreference: 'high-performance',
+      // 'high-performance' asks for the discrete GPU on a laptop; on mobile
+      // there is only one GPU and some drivers handle the hint poorly, so don't
+      // ask for anything special there.
+      powerPreference: isTouchDevice() ? 'default' : 'high-performance',
       stencil: false,
       alpha: false,
+      // A failed context is better surfaced than silently software-emulated at
+      // one frame a second.
+      failIfMajorPerformanceCaveat: false,
     });
     this.renderer.outputColorSpace = SRGBColorSpace;
     // PostFX tone-maps in its composite pass (three skips tone mapping when

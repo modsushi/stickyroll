@@ -36,7 +36,17 @@ looks like a working game you cannot see — score ticks up, nothing is drawn.
 Pause: the bottom of the pause screen reports the GL version, GPU, quality tier
 and which render path is live (`hdr` / `ldr 8-bit` / `off`) plus any failure.
 
-The usual cause is the post-processing chain's offscreen buffers. Rendering
+**Only one WebGL context, ever.** Browsers cap the number of live contexts and
+on mobile creating a second one can evict the first — which kills the game's
+canvas while the DOM HUD carries on as though nothing happened. The collection
+thumbnails used to spin up their own renderer; they now borrow the game's via a
+render target and a pixel readback. Don't reintroduce a second `WebGLRenderer`.
+
+If the context is lost anyway, a red banner says so and `webglcontextlost` is
+handled so the browser can restore it. Force the failure with
+`canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext()`.
+
+Another cause is the post-processing chain's offscreen buffers. Rendering
 *into* a half-float texture needs `EXT_color_buffer_float` (WebGL2) or
 `EXT_color_buffer_half_float` (WebGL1), and plenty of Android GPUs expose
 neither; the framebuffer comes back incomplete and draws nothing. `PostFX`
