@@ -20,6 +20,8 @@ import {
   BoxGeometry,
   Color,
   DirectionalLight,
+  Euler,
+  Group,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -31,7 +33,9 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
+  Quaternion,
   Scene,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 
@@ -230,7 +234,11 @@ export function runSelfTest(
     let badGeo = 0;
     let badMat = 0;
     let badSphere = 0;
+    let badNormNaN = 0;
+    let badNormZero = 0;
+    let missingNorm = 0;
     let first = '';
+    let firstN = '';
     gameScene.traverse((o) => {
       const mesh = o as Mesh & { instanceMatrix?: { array: ArrayLike<number> }; count?: number };
       const g = mesh.geometry;
@@ -244,6 +252,30 @@ export function runSelfTest(
               break;
             }
           }
+        }
+        // Normals were the gap in the first version of this check. A zero-length
+        // normal becomes NaN the moment anything normalises it, and a NaN
+        // varying interpolated across a triangle is exactly the kind of thing a
+        // tile-based GPU handles by dropping the tile.
+        const nrm = g.getAttribute?.('normal') as { array: ArrayLike<number> } | undefined;
+        if (nrm) {
+          const a = nrm.array;
+          for (let i = 0; i + 2 < a.length; i += 3) {
+            const x = a[i], y = a[i + 1], z = a[i + 2];
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+              badNormNaN++;
+              if (!firstN) firstN = `nan ${o.name || o.type}`;
+              break;
+            }
+            if (x * x + y * y + z * z < 1e-12) {
+              badNormZero++;
+              if (!firstN) firstN = `zero ${o.name || o.type}`;
+              break;
+            }
+          }
+        } else {
+          missingNorm++;
+          if (!firstN) firstN = `missing ${o.name || o.type}`;
         }
         const s = g.boundingSphere;
         if (s && (!Number.isFinite(s.radius) || !Number.isFinite(s.center.x))) {
@@ -270,6 +302,100 @@ export function runSelfTest(
       of: 9,
       note: `geo ${badGeo} matrices ${badMat} spheres ${badSphere}${first ? ` first: ${first}` : ''}`,
     });
+    const badN = badNormNaN + badNormZero + missingNorm;
+    steps.push({
+      name: 'normals',
+      lit: badN === 0 ? 9 : 0,
+      of: 9,
+      note:
+        `nan ${badNormNaN} zero-length ${badNormZero} missing ${missingNorm}` +
+        `${firstN ? ` first: ${firstN}` : ''}`,
+    });
+  }
+
+  // 6d. Instancing x normals, isolated from the city.
+  //
+  // In the on-device logs the split tracks instancing exactly: the non-instanced
+  // ground passes lit, the instanced props and buildings fail, and the surround
+  // (a non-instanced wall plus an instanced skyline) lands in between. The
+  // passing 'instanced lit boxes' rung above uses translation-only matrices,
+  // whereas the city composes rotation and scale — and on the instanced path
+  // three multiplies the normal by mat3(instanceMatrix), which the plain path
+  // never does. These four rungs vary one thing at a time.
+  {
+    let kitGeo: Mesh['geometry'] | undefined;
+    const buildingsGroup = gameScene.getObjectByName('buildings');
+    buildingsGroup?.traverse((o) => {
+      const im = o as InstancedMesh;
+      if (!kitGeo && im.isInstancedMesh) kitGeo = im.geometry;
+    });
+
+    if (kitGeo) {
+      kitGeo.computeBoundingSphere();
+      const r = kitGeo.boundingSphere?.radius || 1;
+      const c = kitGeo.boundingSphere?.center ?? { x: 0, y: 0, z: 0 };
+      // Frame it so the model overfills the viewport; a partially covered frame
+      // would read as a partial failure that is really just framing.
+      const cam = new PerspectiveCamera(46, gameCamera.aspect, gameCamera.near, gameCamera.far);
+      cam.position.set(c.x, c.y, c.z + r * 1.6);
+      cam.lookAt(c.x, c.y, c.z);
+
+      const probeScene = new Scene();
+      // A lit background, so sample points the model does not cover still read
+      // as drawn. Against a black clear those points look like failures and a
+      // healthy probe scores 6/9 for no reason.
+      probeScene.background = new Color(0x3366aa);
+      const holder = new Group();
+      probeScene.add(holder);
+
+      const swap = (o: Mesh | InstancedMesh) => {
+        holder.clear();
+        holder.add(o);
+      };
+
+      const nrmMat = new MeshNormalMaterial();
+      const basicMat = new MeshBasicMaterial({ color: 0x44ccaa });
+
+      // Plain mesh, normals, no instancing at all.
+      swap(new Mesh(kitGeo, nrmMat));
+      run('probe: plain mesh + normals', () => renderer.render(probeScene, cam));
+
+      // Same geometry, same material, one instance, identity matrix.
+      const one = new InstancedMesh(kitGeo, nrmMat, 1);
+      one.setMatrixAt(0, new Matrix4());
+      one.instanceMatrix.needsUpdate = true;
+      one.frustumCulled = false;
+      swap(one);
+      run('probe: instanced x1 identity + normals', () => renderer.render(probeScene, cam));
+
+      // One instance carrying rotation and scale, as every city object does.
+      const rot = new InstancedMesh(kitGeo, nrmMat, 1);
+      rot.setMatrixAt(
+        0,
+        new Matrix4().compose(
+          new Vector3(0, 0, 0),
+          new Quaternion().setFromEuler(new Euler(0, Math.PI * 0.37, 0)),
+          new Vector3(1.15, 1.15, 1.15)
+        )
+      );
+      rot.instanceMatrix.needsUpdate = true;
+      rot.frustumCulled = false;
+      swap(rot);
+      run('probe: instanced x1 rot+scale + normals', () => renderer.render(probeScene, cam));
+
+      // The same rotated instance with no normals in play, to confirm the
+      // instanced path itself is sound.
+      const rotBasic = new InstancedMesh(kitGeo, basicMat, 1);
+      rotBasic.setMatrixAt(0, new Matrix4().compose(
+        new Vector3(0, 0, 0),
+        new Quaternion().setFromEuler(new Euler(0, Math.PI * 0.37, 0)),
+        new Vector3(1.15, 1.15, 1.15)
+      ));
+      rotBasic.instanceMatrix.needsUpdate = true;
+      rotBasic.frustumCulled = false;
+      swap(rotBasic);
+      run('probe: instanced x1 rot+scale, basic', () => renderer.render(probeScene, cam));
+    }
   }
 
   // ── the real scene, taken apart ─────────────────────────────────────────
