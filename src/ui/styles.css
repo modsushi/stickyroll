@@ -1,0 +1,831 @@
+/*
+ * UI is DOM, not canvas.
+ *
+ * Text rendering, 9-slice borders, safe-area insets and font loading are all
+ * solved problems in CSS and all painful in WebGL, and the HUD never needs to
+ * interleave with 3D depth. Everything here sits in one pointer-events:none
+ * overlay so the canvas keeps receiving drags.
+ *
+ * Layout is portrait-first; a single media query reflows to the landscape
+ * arrangement from the reference art.
+ */
+
+@font-face {
+  font-family: 'Kenney Future';
+  src: url('/fonts/Kenney Future.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'Kenney Future Narrow';
+  src: url('/fonts/Kenney Future Narrow.ttf') format('truetype');
+  font-display: block;
+}
+
+:root {
+  --gold: #ffc93c;
+  --gold-deep: #e08a12;
+  --purple: #6b3fa0;
+  --purple-deep: #40206b;
+  --purple-dark: #2a1147;
+  --ink: #1b1030;
+  --white: #fff8ee;
+
+  --card: clamp(58px, 15vw, 84px);
+  --pad: clamp(10px, 2.6vw, 20px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+
+  --ease-pop: cubic-bezier(0.22, 1.4, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--white);
+  font-family: 'Kenney Future', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Every direct child of the overlay and of the HUD is positioned, so each one
+   anchors to its own corner instead of stacking as a static block. */
+#ui > *,
+#hud > * {
+  position: absolute;
+}
+
+.clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* ── shared chrome ─────────────────────────────────────────────────────── */
+
+/* The pill and plate share one recipe: a saturated body, a lighter inner
+   highlight, and a hard bottom edge that fakes extrusion. Doing this with
+   gradients rather than the pack's PNGs keeps every element crisp at any DPI. */
+.plate {
+  background: linear-gradient(180deg, #7d4bb8 0%, var(--purple) 42%, var(--purple-deep) 100%);
+  border: 3px solid var(--gold);
+  border-radius: 18px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -5px 0 rgba(0, 0, 0, 0.3),
+    0 5px 0 rgba(0, 0, 0, 0.35),
+    0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.42em 0.9em;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #7d4bb8 0%, var(--purple) 45%, var(--purple-deep) 100%);
+  border: 3px solid var(--gold);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.3),
+    0 4px 0 rgba(0, 0, 0, 0.35),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+}
+
+.btn {
+  pointer-events: auto;
+  cursor: pointer;
+  border: none;
+  font: inherit;
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffe37a 0%, var(--gold) 48%, var(--gold-deep) 100%);
+  border-radius: 999px;
+  padding: 0.72em 1.9em;
+  font-size: clamp(15px, 3.6vw, 21px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
+    0 5px 0 #a35d05,
+    0 10px 22px rgba(0, 0, 0, 0.45);
+  transition: transform 0.1s var(--ease-pop), box-shadow 0.1s ease;
+}
+.btn:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.5),
+    0 1px 0 #a35d05,
+    0 4px 10px rgba(0, 0, 0, 0.4);
+}
+.btn.ghost {
+  background: linear-gradient(180deg, #8d5ac8 0%, var(--purple) 48%, var(--purple-deep) 100%);
+  color: var(--white);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.25),
+    0 5px 0 #23103c,
+    0 10px 22px rgba(0, 0, 0, 0.45);
+}
+.btn.ghost:active {
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 1px 0 #23103c;
+}
+
+.icon-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  width: clamp(42px, 11vw, 56px);
+  height: clamp(42px, 11vw, 56px);
+  border: 3px solid var(--gold);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #8d5ac8 0%, var(--purple) 45%, var(--purple-deep) 100%);
+  color: var(--white);
+  display: grid;
+  place-items: center;
+  font-size: clamp(15px, 4vw, 20px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.3),
+    0 4px 0 rgba(0, 0, 0, 0.4),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+  transition: transform 0.1s var(--ease-pop);
+}
+.icon-btn:active {
+  transform: translateY(3px);
+}
+
+/* ── boot ──────────────────────────────────────────────────────────────── */
+
+#boot {
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 26px;
+  background:
+    radial-gradient(120% 90% at 50% 12%, #4b2580 0%, #2a1147 48%, #170a29 100%);
+  z-index: 100;
+  transition: opacity 0.5s ease;
+  text-align: center;
+  padding: 24px;
+}
+#boot.gone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.logo {
+  font-size: clamp(34px, 11vw, 76px);
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  color: var(--gold);
+  text-shadow:
+    0 3px 0 #a35d05,
+    0 6px 0 #6d3d03,
+    0 14px 30px rgba(0, 0, 0, 0.6);
+  animation: logoIn 0.8s var(--ease-pop) both;
+}
+.logo small {
+  display: block;
+  font-size: 0.3em;
+  letter-spacing: 0.4em;
+  color: var(--white);
+  opacity: 0.75;
+  margin-top: 0.9em;
+  text-shadow: none;
+}
+@keyframes logoIn {
+  from { transform: scale(0.7) translateY(20px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.bar {
+  width: min(72vw, 340px);
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 3px solid rgba(255, 201, 60, 0.55);
+  overflow: hidden;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffe37a, var(--gold), #ff9d2e);
+  transition: width 0.25s var(--ease-out);
+  box-shadow: 0 0 14px rgba(255, 201, 60, 0.8);
+}
+
+.boot-note {
+  font-size: clamp(11px, 2.8vw, 14px);
+  letter-spacing: 0.16em;
+  opacity: 0.62;
+  text-transform: uppercase;
+}
+
+/* ── HUD ───────────────────────────────────────────────────────────────── */
+
+#hud {
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+#hud.on {
+  opacity: 1;
+}
+
+.timer {
+  top: calc(var(--safe-t) + var(--pad));
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(20px, 5.4vw, 30px);
+  letter-spacing: 0.05em;
+  min-width: 4.6em;
+  justify-content: center;
+}
+.timer .glyph {
+  font-size: 0.85em;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.4));
+}
+.timer.warn {
+  animation: pulseWarn 0.5s ease-in-out infinite alternate;
+  border-color: #ff5c5c;
+}
+@keyframes pulseWarn {
+  from { transform: translateX(-50%) scale(1); }
+  to { transform: translateX(-50%) scale(1.07); }
+}
+
+.score {
+  top: calc(var(--safe-t) + var(--pad) + clamp(52px, 12.5vw, 68px));
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(15px, 3.9vw, 21px);
+  color: var(--gold);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  letter-spacing: 0.08em;
+  transition: transform 0.14s var(--ease-pop);
+}
+.score.bump {
+  transform: translateX(-50%) scale(1.16);
+}
+
+#pause-btn {
+  top: calc(var(--safe-t) + var(--pad));
+  right: calc(var(--safe-r) + var(--pad));
+}
+
+/* collectible cards.
+   In portrait they sit *below* the timer row: at phone widths a centred timer
+   and a left-aligned pair of cards fight for the same strip of screen. The
+   landscape rule below lifts them back up beside it, where there's room. */
+.cards {
+  top: calc(var(--safe-t) + var(--pad) + clamp(52px, 13vw, 64px));
+  left: calc(var(--safe-l) + var(--pad));
+  display: flex;
+  gap: 8px;
+}
+
+.card {
+  width: var(--card);
+  border-radius: 14px;
+  padding: 6px 4px 5px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  background: linear-gradient(180deg, #7d4bb8 0%, var(--purple) 45%, var(--purple-deep) 100%);
+  border: 3px solid var(--gold);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.26),
+    0 4px 0 rgba(0, 0, 0, 0.36),
+    0 8px 18px rgba(0, 0, 0, 0.42);
+  transition: transform 0.18s var(--ease-pop);
+}
+.card.punch {
+  transform: scale(1.18) rotate(-2deg);
+}
+.card.done {
+  border-color: #7bf07b;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.3),
+    0 0 0 3px rgba(123, 240, 123, 0.28),
+    0 4px 0 rgba(0, 0, 0, 0.36),
+    0 8px 22px rgba(80, 240, 120, 0.35);
+}
+.card .thumb {
+  width: calc(var(--card) - 22px);
+  height: calc(var(--card) - 22px);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.26);
+  display: block;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.card .count {
+  font-size: clamp(11px, 2.9vw, 15px);
+  letter-spacing: 0.02em;
+  color: var(--white);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+.card .count b {
+  color: var(--gold);
+  font-weight: inherit;
+}
+
+/* growth meter + tier pips along the bottom */
+.tiers {
+  bottom: calc(var(--safe-b) + var(--pad));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: clamp(5px, 1.6vw, 9px);
+}
+
+.pip {
+  width: clamp(30px, 8vw, 42px);
+  height: clamp(30px, 8vw, 42px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: clamp(10px, 2.6vw, 13px);
+  color: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(180deg, #4a2a72 0%, #331a52 100%);
+  border: 3px solid rgba(255, 201, 60, 0.3);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+  transition: all 0.3s var(--ease-pop);
+}
+.pip.on {
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffe37a 0%, var(--gold) 50%, var(--gold-deep) 100%);
+  border-color: #fff3c4;
+  box-shadow: 0 3px 0 #a35d05, 0 0 18px rgba(255, 201, 60, 0.6);
+}
+.pip.current {
+  transform: scale(1.24);
+  animation: pipPulse 1.4s ease-in-out infinite;
+}
+@keyframes pipPulse {
+  0%, 100% { box-shadow: 0 3px 0 #a35d05, 0 0 16px rgba(255, 201, 60, 0.55); }
+  50% { box-shadow: 0 3px 0 #a35d05, 0 0 28px rgba(255, 201, 60, 0.95); }
+}
+
+.tier-name {
+  bottom: calc(var(--safe-b) + var(--pad) + clamp(38px, 9.5vw, 52px));
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(11px, 2.9vw, 14px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+/* growth progress ring drawn around the current pip */
+.growth {
+  bottom: calc(var(--safe-b) + var(--pad) + clamp(66px, 16vw, 86px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(52vw, 260px);
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 201, 60, 0.35);
+  overflow: hidden;
+}
+.growth > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #b8f, #ffe37a, var(--gold));
+  box-shadow: 0 0 12px rgba(255, 201, 60, 0.7);
+  transition: width 0.18s var(--ease-out);
+}
+
+/* floating +N popups */
+.pop {
+  position: absolute;
+  font-size: clamp(15px, 4vw, 24px);
+  color: var(--gold);
+  text-shadow: 0 2px 0 #7a3d00, 0 3px 8px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  will-change: transform, opacity;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+.pop.big {
+  font-size: clamp(21px, 5.6vw, 34px);
+  color: #fff0a8;
+}
+.pop .x {
+  font-size: 0.72em;
+  color: #ff8ae0;
+}
+
+/* combo readout */
+.combo {
+  top: 50%;
+  right: calc(var(--safe-r) + var(--pad));
+  transform: translateY(-50%);
+  text-align: right;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.combo.on {
+  opacity: 1;
+}
+.combo .n {
+  font-size: clamp(26px, 8vw, 46px);
+  color: var(--gold);
+  text-shadow: 0 3px 0 #7a3d00, 0 6px 14px rgba(0, 0, 0, 0.6);
+  display: block;
+  line-height: 1;
+}
+.combo .label {
+  font-size: clamp(9px, 2.4vw, 12px);
+  letter-spacing: 0.24em;
+  opacity: 0.8;
+  text-transform: uppercase;
+}
+.combo .ring {
+  margin-top: 6px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.combo .ring > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ff8ae0, var(--gold));
+  transform-origin: right;
+}
+
+/* tier-up banner */
+.banner {
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+}
+.banner.show {
+  animation: bannerIn 1.6s var(--ease-pop) forwards;
+}
+.banner .k {
+  font-size: clamp(12px, 3.2vw, 16px);
+  letter-spacing: 0.35em;
+  color: var(--white);
+  opacity: 0.85;
+  text-transform: uppercase;
+}
+.banner .v {
+  font-size: clamp(30px, 9vw, 58px);
+  color: var(--gold);
+  text-shadow: 0 4px 0 #a35d05, 0 8px 0 #6d3d03, 0 14px 30px rgba(0, 0, 0, 0.65);
+  display: block;
+  margin-top: 0.15em;
+}
+@keyframes bannerIn {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  16% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  26% { transform: translate(-50%, -50%) scale(1); }
+  74% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -58%) scale(0.94); }
+}
+
+/* flying collectible chip */
+.flyer {
+  position: absolute;
+  width: clamp(26px, 7vw, 38px);
+  height: clamp(26px, 7vw, 38px);
+  border-radius: 10px;
+  background: radial-gradient(circle at 35% 30%, #fff3c4, var(--gold) 55%, var(--gold-deep));
+  border: 2px solid #fff3c4;
+  box-shadow: 0 0 18px rgba(255, 201, 60, 0.9);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* touch stick */
+#stick {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+#stick.on {
+  opacity: 1;
+}
+#stick .base,
+#stick .knob {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+#stick .base {
+  width: 132px;
+  height: 132px;
+  border: 3px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(2px);
+}
+#stick .knob {
+  width: 58px;
+  height: 58px;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95), rgba(255, 201, 60, 0.85));
+  box-shadow: 0 0 22px rgba(255, 201, 60, 0.6);
+}
+
+/* ── modal screens ─────────────────────────────────────────────────────── */
+
+.screen {
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: clamp(14px, 3vw, 24px);
+  padding: max(24px, var(--safe-t)) 24px max(24px, var(--safe-b));
+  background: radial-gradient(120% 90% at 50% 20%, rgba(75, 37, 128, 0.94), rgba(15, 7, 28, 0.97));
+  pointer-events: auto;
+  z-index: 50;
+  overflow-y: auto;
+  animation: fadeIn 0.28s ease both;
+}
+.screen.hidden {
+  display: none;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.screen h1 {
+  font-size: clamp(26px, 7.5vw, 46px);
+  color: var(--gold);
+  text-shadow: 0 3px 0 #a35d05, 0 6px 0 #6d3d03, 0 12px 26px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+.screen h2 {
+  font-size: clamp(13px, 3.4vw, 17px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  text-align: center;
+  font-weight: normal;
+}
+
+.stars {
+  display: flex;
+  gap: clamp(8px, 2.4vw, 16px);
+}
+.stars .s {
+  width: clamp(48px, 13vw, 76px);
+  height: clamp(48px, 13vw, 76px);
+  display: grid;
+  place-items: center;
+  font-size: clamp(38px, 10vw, 62px);
+  line-height: 1;
+  /* Empty stars must read as *empty slots*, not as dust — the gap between
+     what you got and what was available is the whole hook for a retry. */
+  color: rgba(255, 255, 255, 0.13);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+  transform: scale(0.86);
+  opacity: 1;
+  transition: none;
+}
+.stars .s.lit {
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(255, 201, 60, 0.95), 0 4px 0 #a35d05;
+  animation: starPop 0.5s var(--ease-pop) forwards;
+}
+@keyframes starPop {
+  0% { transform: scale(0.4) rotate(-30deg); opacity: 0; }
+  60% { transform: scale(1.32) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+.big-score {
+  font-size: clamp(40px, 12vw, 76px);
+  color: var(--white);
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 10px 26px rgba(0, 0, 0, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(8px, 2.4vw, 18px);
+  justify-content: center;
+}
+.stat {
+  min-width: 92px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 201, 60, 0.35);
+  text-align: center;
+}
+.stat .k {
+  display: block;
+  font-size: clamp(9px, 2.3vw, 11px);
+  letter-spacing: 0.18em;
+  opacity: 0.65;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.stat .v {
+  font-size: clamp(17px, 4.6vw, 24px);
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* collection gallery */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(76px, 21vw, 108px), 1fr));
+  /* A capped-height grid with `auto` rows distributes its height across them,
+     squashing every tile to fit instead of scrolling. `max-content` + start
+     alignment makes rows size to their tile and lets the container scroll. */
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: clamp(8px, 2.2vw, 14px);
+  width: min(94vw, 760px);
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.slot {
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(125, 75, 184, 0.5), rgba(42, 17, 71, 0.7));
+  border: 2px solid rgba(255, 201, 60, 0.3);
+  position: relative;
+  padding: 6px;
+  overflow: hidden;
+  /* The canvas is square and sized by width, so the tile is square without
+     `aspect-ratio` — which fights the canvas's intrinsic height and lets rows
+     bleed into each other. */
+  line-height: 0;
+}
+.slot.found {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, #7d4bb8, var(--purple-deep));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 3px 0 rgba(0, 0, 0, 0.3);
+}
+.slot canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.slot.locked canvas {
+  filter: brightness(0) opacity(0.32);
+}
+.slot .n {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  font-size: clamp(9px, 2.3vw, 12px);
+  line-height: 1;
+  color: var(--gold);
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(20, 8, 40, 0.72);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+.slot .nm {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  line-height: 1.3;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 2px 3px;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+.slot:hover .nm {
+  opacity: 1;
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: clamp(11px, 2.9vw, 14px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.slider input {
+  pointer-events: auto;
+  width: min(46vw, 220px);
+  accent-color: var(--gold);
+}
+
+/* perf hud */
+#perf {
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #9dffcf;
+  white-space: pre;
+  display: none;
+  z-index: 90;
+}
+#perf.on {
+  display: block;
+}
+
+/* ── landscape ─────────────────────────────────────────────────────────── */
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .cards {
+    top: calc(var(--safe-t) + var(--pad));
+    flex-direction: column;
+  }
+  .timer {
+    left: auto;
+    right: 50%;
+    transform: translateX(50%);
+  }
+  .timer.warn {
+    animation-name: pulseWarnLand;
+  }
+  @keyframes pulseWarnLand {
+    from { transform: translateX(50%) scale(1); }
+    to { transform: translateX(50%) scale(1.07); }
+  }
+  .score {
+    top: calc(var(--safe-t) + var(--pad));
+    left: auto;
+    right: calc(var(--safe-r) + var(--pad) + clamp(52px, 12vw, 68px));
+    transform: none;
+  }
+  .score.bump {
+    transform: scale(1.16);
+  }
+  .growth {
+    bottom: calc(var(--safe-b) + var(--pad) + clamp(48px, 11vw, 60px));
+  }
+  .tier-name {
+    bottom: calc(var(--safe-b) + var(--pad) + clamp(34px, 8vw, 44px));
+  }
+  .gallery {
+    max-height: 44vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.05ms !important;
+  }
+}
