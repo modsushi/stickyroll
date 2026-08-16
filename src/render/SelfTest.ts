@@ -88,6 +88,21 @@ export function runSelfTest(
       // painted black over the frame, while a dark non-zero means it drew and
       // came out wrong.
       let extra = note;
+      // A driver that faults mid-frame can discard the whole command buffer,
+      // clear included — which is the only way drawing a wall blackens the sky.
+      const err = gl.getError();
+      if (err !== gl.NO_ERROR || gl.isContextLost()) {
+        const names: Record<number, string> = {
+          [gl.INVALID_ENUM]: 'INVALID_ENUM',
+          [gl.INVALID_VALUE]: 'INVALID_VALUE',
+          [gl.INVALID_OPERATION]: 'INVALID_OPERATION',
+          [gl.INVALID_FRAMEBUFFER_OPERATION]: 'INVALID_FB_OP',
+          [gl.OUT_OF_MEMORY]: 'OUT_OF_MEMORY',
+          [gl.CONTEXT_LOST_WEBGL]: 'CONTEXT_LOST',
+        };
+        const tag = `GL ${names[err] ?? err}${gl.isContextLost() ? ' +LOST' : ''}`;
+        extra = extra ? `${extra} · ${tag}` : tag;
+      }
       if (lit < 9) {
         const px = new Uint8Array(4);
         gl.readPixels(
@@ -303,6 +318,44 @@ export function runSelfTest(
 
   restore();
   run('game scene, no shadows', () => renderer.render(gameScene, gameCamera));
+
+  // The lit path draws black where the basic path is perfect, so the fault is
+  // in what MeshStandardMaterial compiles to for *this* scene. The passing
+  // 'lit box' test differs from the game scene in exactly three ways — the
+  // hemisphere light, the fog, and the atlas materials — so each is removed in
+  // turn. Whichever removal makes the frame come back is the ingredient.
+  const stdOverride = new MeshStandardMaterial({ color: 0xbb9966 });
+
+  gameScene.overrideMaterial = new MeshBasicMaterial({ color: 0xdd4488 });
+  run('full: basic override', () => renderer.render(gameScene, gameCamera));
+
+  gameScene.overrideMaterial = stdOverride;
+  run('full: standard override', () => renderer.render(gameScene, gameCamera));
+  gameScene.overrideMaterial = null;
+
+  const savedFog = gameScene.fog;
+  gameScene.fog = null;
+  run('full: no fog', () => renderer.render(gameScene, gameCamera));
+  gameScene.fog = savedFog;
+
+  const hemi = kids.find((k) => k.type === 'HemisphereLight');
+  if (hemi) {
+    hemi.visible = false;
+    run('full: no hemisphere light', () => renderer.render(gameScene, gameCamera));
+    hemi.visible = true;
+  }
+
+  const dirLight = kids.find((k) => k.type === 'DirectionalLight');
+  if (dirLight) {
+    dirLight.visible = false;
+    run('full: no directional light', () => renderer.render(gameScene, gameCamera));
+    dirLight.visible = true;
+  }
+
+  // Same scene rendered twice back to back. Identical results mean the failure
+  // is deterministic; differing ones confirm it is timing or driver state.
+  run('full: repeat A', () => renderer.render(gameScene, gameCamera));
+  run('full: repeat B', () => renderer.render(gameScene, gameCamera));
 
   renderer.shadowMap.enabled = true;
   run('game scene, shadows on', () => renderer.render(gameScene, gameCamera));
