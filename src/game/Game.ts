@@ -27,6 +27,7 @@ import { Score } from './Score';
 import { Sticking, type Award } from './Sticking';
 import { TIERS } from './Growth';
 import { Decals } from '../render/Decals';
+import { Demolition } from '../render/Demolition';
 import { Particles } from '../render/Particles';
 
 const _dirScreen = { x: 0, y: 0 };
@@ -49,6 +50,7 @@ export class Game {
   private collectibles!: Collectibles;
   private decals!: Decals;
   private particles!: Particles;
+  private demolition!: Demolition;
 
   timeLeft = 0;
   private lastCountdown = -1;
@@ -141,8 +143,15 @@ export class Game {
     this.collectibles = new Collectibles(this.level, this.city);
     this.decals = new Decals(this.city);
     this.particles = new Particles();
+    this.demolition = new Demolition(this.particles);
 
-    scene.add(this.traffic.group, this.peds.group, this.decals.group, this.particles.group);
+    scene.add(
+      this.traffic.group,
+      this.peds.group,
+      this.decals.group,
+      this.particles.group,
+      this.demolition.group
+    );
     scene.add(this.ball.group);
 
     this.ball.reset(perks().startMass);
@@ -386,6 +395,7 @@ export class Game {
     }
     this.decals?.update(this.ball);
     this.particles?.update(dt);
+    this.demolition?.update(dt);
     this.collectibles?.render(dt);
   }
 
@@ -431,12 +441,14 @@ export class Game {
     this.traffic?.dispose();
     this.peds?.dispose();
     this.particles?.dispose();
+    this.demolition?.dispose();
     scene.remove(
       this.city.group,
       this.traffic.group,
       this.peds.group,
       this.decals.group,
       this.particles.group,
+      this.demolition.group,
       this.ball.group
     );
     this.city.props.clear();
@@ -445,6 +457,11 @@ export class Game {
   /** Effects layer, for systems that react to gameplay events. */
   particlesRef() {
     return this.particles;
+  }
+
+  /** Building demolitions, driven from the `lockOn`/`lockOff`/`demolish` events. */
+  demolitionRef() {
+    return this.demolition;
   }
 
   /** Live collectible flights, consumed by the HUD to spawn its chips. */
@@ -460,6 +477,7 @@ export class Game {
       ballDrawCalls: this.baker?.drawCalls ?? 0,
       tier: this.ball.growth.tier,
       radius: this.ball.visualRadius,
+      rubble: this.demolition?.liveChunks ?? 0,
     };
   }
 }

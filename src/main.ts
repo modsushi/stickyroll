@@ -36,7 +36,7 @@ import { Shop } from './ui/Shop';
 import { el } from './ui/dom';
 
 /** Bumped by hand so a screenshot proves which build is being tested. */
-const BUILD = 'build 2026-08-18c';
+const BUILD = 'build 2026-08-18d';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -130,6 +130,29 @@ bus.on('tierUp', (e) => {
 bus.on('collect', () => {
   const p = game.particlesRef();
   p?.spark(game.ball.pos.x, game.ball.pos.y + game.ball.visualRadius, game.ball.pos.z, 10);
+});
+
+// ── demolitions ───────────────────────────────────────────────────────────
+//
+// The highlight is a pure reaction to the lock pair, so a building lit up by
+// one system and levelled by another can never disagree about which building it
+// was: both carry the same PropInstance.
+bus.on('lockOn', (e) => {
+  game.demolitionRef()?.lock(e.prop);
+  sfx.lock();
+});
+bus.on('lockOff', (e) => game.demolitionRef()?.release(e.prop));
+bus.on('demolish', (e) => {
+  game.demolitionRef()?.demolish(e.prop, e.impact, e.power, e.ballRadius);
+  sfx.demolish(e.power);
+  // The hardest *shake* in the game — flattening a building is the one moment
+  // that should physically jolt the picture — but only a token dolly. The
+  // punch pulls the camera back, and pulling back is the last thing this
+  // moment wants: it shrinks the rubble at the exact instant the player is
+  // meant to watch it fly. The big dolly stays the tier-up's signature, where
+  // the whole point *is* seeing more world.
+  game.camera.shake(0.7 + e.power * 0.8);
+  game.camera.punch(0.06 + e.power * 0.08);
 });
 
 // ── screen flow ───────────────────────────────────────────────────────────
@@ -285,6 +308,7 @@ const loop = new Loop(
         `stuck  ${s.stuck} (${s.ballDrawCalls} dc)\n` +
         `tier   ${s.tier} r=${s.radius.toFixed(2)}\n` +
         `parts  ${particles?.liveCount ?? 0}\n` +
+        `rubble ${s.rubble}\n` +
         `post   ${post.enabled ? (post.hdr ? 'hdr' : 'ldr (8-bit)') : 'off'}` +
         (post.failure ? `\n       ${post.failure}` : '') +
         `\n${renderer.diagnostics()}` +

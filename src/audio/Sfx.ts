@@ -11,10 +11,18 @@
  * a touch of randomness, so a hundred pickups stay lively without ever
  * marching up a scale.
  *
- * Three families, deliberately few:
+ * Five families, deliberately few:
  *   pop    everything ordinary — litter, cones, furniture, shop fittings
  *   human  citizens, so eating a person is unmistakable
- *   chunk  cars and other heavy things, a deeper pop with a thud under it
+ *   chunk  heavy junk — drivetrains, columns — a deeper pop with a thud under it
+ *   car    vehicles: a sprung metal *pluck*, the pop's rise inverted into a fall
+ *   —      buildings, which make no pickup sound at all and are voiced by
+ *          `demolish` instead
+ *
+ * The last two are the tier-6 and tier-8 payoffs, and they used to share the
+ * `chunk` voice with a car drivetrain. Hearing the same thud whether you had
+ * eaten a hubcap or flattened a taxi threw away the moment the entire first
+ * half of a run is spent working toward.
  *
  * Citizens get two sounds rather than one, and their *directions* are the whole
  * design: `startle` whoops upward when someone spots the ball, `popHuman` yelps
@@ -52,13 +60,14 @@ const COLLECT_CHORD = [0, 4, 7, 9, 12, 16, 19, 21, 24];
 /**
  * Where each voice sits, as the pop's landing pitch in Hz.
  *
- * Small things pop high and short, big things low and round. Everything except
- * `human` and `heavy` is the same sound at a different pitch, which is what
- * makes the pop read as *the* pickup sound rather than one of five.
+ * Small things pop high and short, big things low and round. The four ordinary
+ * voices are the same sound at a different pitch, which is what makes the pop
+ * read as *the* pickup sound rather than one of five; `human`, `heavy`, `car`
+ * and `building` are the deliberate exceptions.
  */
 const POP: Record<
   NonNullable<PropDef['voice']>,
-  { freq: number; decay: number; family: 'pop' | 'human' | 'chunk' }
+  { freq: number; decay: number; family: 'pop' | 'human' | 'chunk' | 'car' | 'silent' }
 > = {
   tiny: { freq: 880, decay: 0.075, family: 'pop' },
   metal: { freq: 740, decay: 0.085, family: 'pop' },
@@ -66,6 +75,14 @@ const POP: Record<
   soft: { freq: 480, decay: 0.105, family: 'pop' },
   heavy: { freq: 190, decay: 0.2, family: 'chunk' },
   human: { freq: 520, decay: 0.16, family: 'human' },
+  // Vehicles: the base pitch is only a starting point — `popCar` re-derives it
+  // from the vehicle's measured size so a hatchback and a garbage truck are an
+  // octave apart rather than the same note twice.
+  car: { freq: 260, decay: 0.26, family: 'car' },
+  // Buildings make no pickup sound. `Sfx.demolish`, fired from the `demolish`
+  // event, is the sound of rolling over one, and layering a pop under a
+  // collapsing building only muddies the transient that sells the impact.
+  building: { freq: 0, decay: 0, family: 'silent' },
 };
 
 class Sfx {
@@ -78,6 +95,10 @@ class Sfx {
   /** Drives the rising run when a cluster of collectibles is taken in one pass. */
   private lastCollect = 0;
   private collectRun = 0;
+  /** Keeps two buildings falling together from stacking into a clipped mess. */
+  private lastDemolish = 0;
+  /** Same, for the quiet cue that marks a building as next. */
+  private lastLock = 0;
 
   /**
    * @param comboTier no longer changes pitch — only a little loudness and
@@ -97,6 +118,7 @@ class Sfx {
     this.lastPickup = t;
 
     const v = POP[def.voice ?? 'soft'];
+    if (v.family === 'silent') return;
     // Random detune only, and narrow. This is what stops a cluster of identical
     // cones sounding like a stuck key, without implying any melody.
     const detune = 0.92 + Math.random() * 0.16;
@@ -104,6 +126,7 @@ class Sfx {
     const peak = 0.2 * (0.85 + clamp01(comboTier / 8) * 0.3);
 
     if (v.family === 'human') this.popHuman(t, freq, peak);
+    else if (v.family === 'car') this.popCar(t, detune, peak, def.absorbSize);
     else this.popBody(t, freq, peak, v.decay, v.family === 'chunk');
 
     // High combos get a little sparkle on top — richness rather than pitch, so
@@ -154,6 +177,189 @@ class Sfx {
       tg.connect(a.sfxBus);
       th.start(t);
       th.stop(t + 0.3);
+    }
+  }
+
+  /**
+   * A vehicle scooped off the road: a sprung metal **pluck**.
+   *
+   * The pop family bends its pitch *upward* under a very short envelope, which
+   * is what makes it read as a bubble. A pluck is the same trick inverted — the
+   * pitch and the brightness both fall away from a hard onset, the way a struck
+   * or plucked string does. That single inversion is enough for the ear to file
+   * cars as a different class of thing from the rest of the city without any
+   * new instrument: the tier-6 moment now announces itself.
+   *
+   * Four layers, in the order you hear them:
+   *   click  sheet metal taking the hit, 30 ms of bandpassed noise
+   *   pluck  a sawtooth through a fast-closing resonant lowpass — the note
+   *   fifth  a quieter, shorter partial that makes the pluck read as *sprung*
+   *          rather than as a plain bass note
+   *   thud   the weight landing, felt more than heard on a phone
+   *
+   * Pitch comes from the vehicle's own measured size, so a go-kart plucks a
+   * clean octave above a garbage truck and the fleet sounds like a fleet rather
+   * than one sound at eight volumes.
+   */
+  private popCar(t: number, detune: number, peak: number, size: number) {
+    const a = audio;
+    const base = 300 * Math.pow(0.5, clamp01((size - 0.8) / 2)) * detune;
+
+    // Sheet-metal click. Before the note, and short enough to be an onset
+    // rather than a sound in its own right.
+    const n = a.noise();
+    const nf = a.filter('bandpass', 2600 + Math.random() * 700, 1.4);
+    const ng = a.env(t, peak * 0.45, 0.001, 0.03);
+    n.connect(nf);
+    nf.connect(ng);
+    ng.connect(a.sfxBus);
+    a.send(ng, 0.12);
+    n.start(t);
+    n.stop(t + 0.12);
+
+    // The pluck: a hard onset whose pitch *and* brightness both fall.
+    const o = a.osc('sawtooth', base, t);
+    o.frequency.setValueAtTime(base * 1.32, t);
+    o.frequency.exponentialRampToValueAtTime(base, t + 0.05);
+    const lp = a.filter('lowpass', base * 11, 6);
+    lp.frequency.exponentialRampToValueAtTime(base * 2.1, t + 0.19);
+    const g = a.env(t, peak * 0.85, 0.002, 0.24);
+    o.connect(lp);
+    lp.connect(g);
+    g.connect(a.sfxBus);
+    a.send(g, 0.18);
+    o.start(t);
+    o.stop(t + 0.6);
+
+    // The sprung fifth above it. Detuned a few cents so the two voices beat
+    // slightly against each other, which is what stops the pluck sounding
+    // synthetic.
+    const h = a.osc('triangle', base * 1.5, t);
+    h.detune.setValueAtTime(7, t);
+    h.frequency.exponentialRampToValueAtTime(base * 1.42, t + 0.12);
+    const hg = a.env(t, peak * 0.3, 0.002, 0.11);
+    h.connect(hg);
+    hg.connect(a.sfxBus);
+    a.send(hg, 0.2);
+    h.start(t);
+    h.stop(t + 0.4);
+
+    // Suspension letting go.
+    const th = a.osc('sine', 96, t);
+    th.frequency.exponentialRampToValueAtTime(44, t + 0.17);
+    const tg = a.env(t, peak * 0.7, 0.003, 0.17);
+    th.connect(tg);
+    tg.connect(a.sfxBus);
+    th.start(t);
+    th.stop(t + 0.35);
+  }
+
+  /**
+   * A building coming down.
+   *
+   * The biggest, longest sound in the game — deliberately longer than the
+   * tier-up, because it is the only one attached to something the player can
+   * see disintegrate, and a short sound over a one-second collapse reads as the
+   * animation being unsound rather than the audio being restrained.
+   *
+   * Five layers on one timeline:
+   *   crack   a bright noise burst — glass and render letting go
+   *   crunch  two detuned saws diving an octave and a half, the structure
+   *   sub     the floor moving, essentially inaudible on laptop speakers and
+   *           the whole sound on anything with a woofer
+   *   body    a long noise bed whose lowpass closes from 1.4 kHz to 180 Hz, so
+   *           the dust cloud settles rather than simply stopping
+   *   rubble  a dozen scattered bandpassed clicks over the next 700 ms — this
+   *           is the layer that sells *masonry*; without it the sound is an
+   *           explosion, which is a different (and wrong) event
+   *
+   * `power` (0..1) is the building's size. It scales level and, more usefully,
+   * pitch: a cottage cracks, a shopfront booms.
+   */
+  demolish(power = 0.5) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+
+    // Two buildings inside a tenth of a second is one demolition as far as the
+    // ear is concerned, and stacking these would clip the master.
+    if (t - this.lastDemolish < 0.1) return;
+    const crowded = t - this.lastDemolish < 0.6 ? 0.62 : 1;
+    this.lastDemolish = t;
+
+    const p = clamp01(power);
+    const amp = (0.5 + p * 0.5) * crowded;
+    // Big things are slow: everything below is stretched by this.
+    const len = 0.75 + p * 0.5;
+    const low = 1 - p * 0.35; // pitch multiplier — bigger building, lower voice
+
+    // Crack.
+    const crack = a.noise();
+    const cf = a.filter('highpass', 1700, 0.8);
+    const cg = a.env(t, amp * 0.34, 0.001, 0.07);
+    crack.connect(cf);
+    cf.connect(cg);
+    cg.connect(a.sfxBus);
+    a.send(cg, 0.3);
+    crack.start(t);
+    crack.stop(t + 0.3);
+
+    // Crunch: the structure failing. Two saws a semitone apart beat against
+    // each other on the way down, which is what makes it tear rather than slide.
+    for (const [mult, delay] of [
+      [1, 0],
+      [1.06, 0.012],
+    ] as const) {
+      const o = a.osc('sawtooth', 170 * low * mult, t + delay);
+      o.frequency.exponentialRampToValueAtTime(52 * low * mult, t + delay + 0.16);
+      const lp = a.filter('lowpass', 900, 1.2);
+      const g = a.env(t + delay, amp * 0.3, 0.004, 0.2);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.2);
+      o.start(t + delay);
+      o.stop(t + delay + 0.6);
+    }
+
+    // Sub.
+    const sub = a.osc('sine', 78 * low, t);
+    sub.frequency.exponentialRampToValueAtTime(27, t + len * 0.6);
+    const sg = a.env(t, amp * 0.72, 0.006, len * 0.65);
+    sub.connect(sg);
+    sg.connect(a.sfxBus);
+    sub.start(t);
+    sub.stop(t + len + 0.4);
+
+    // Body: the dust cloud. Attack is slow enough that the crack stays the
+    // transient, and the filter closing is what makes it settle.
+    const body = a.noise();
+    const bf = a.filter('lowpass', 1400, 0.9);
+    bf.frequency.exponentialRampToValueAtTime(180, t + len);
+    const bg = a.env(t, amp * 0.3, 0.03, len * 0.8);
+    body.connect(bf);
+    bf.connect(bg);
+    bg.connect(a.sfxBus);
+    a.send(bg, 0.5);
+    body.start(t);
+    body.stop(t + len + 0.5);
+
+    // Rubble. Random times, random pitches, thinning out — falling masonry is
+    // dense at first and sparse by the end, and an even spread sounds like a
+    // drum roll instead.
+    const hits = 9 + Math.round(p * 6);
+    for (let i = 0; i < hits; i++) {
+      // Squared distribution: most of the clatter lands in the first third.
+      const at = t + 0.04 + Math.pow(Math.random(), 0.6) * len;
+      const r = a.noise();
+      const rf = a.filter('bandpass', 500 + Math.random() * 2200, 4);
+      const rg = a.env(at, amp * 0.14 * (0.4 + Math.random() * 0.6), 0.001, 0.04 + Math.random() * 0.05);
+      r.connect(rf);
+      rf.connect(rg);
+      rg.connect(a.sfxBus);
+      a.send(rg, 0.4);
+      r.start(at);
+      r.stop(at + 0.24);
     }
   }
 
@@ -272,6 +478,47 @@ class Sfx {
     ng.connect(a.sfxBus);
     n.start(t);
     n.stop(t + 0.16);
+  }
+
+  /**
+   * A building lighting up as the ball closes on it.
+   *
+   * Deliberately tiny — a breath and a soft two-partial ping, a fifth of the
+   * level of a pickup. It is a *cue*, not an event: the demolition a moment
+   * later is the payoff, and anything louder here would step on it. Rate
+   * limited hard, because rolling down a street lights several frontages in
+   * quick succession and a chirp per building would sound like an alarm.
+   */
+  lock() {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    if (t - this.lastLock < 0.25) return;
+    this.lastLock = t;
+
+    for (const [mult, amp, delay] of [
+      [1, 0.05, 0],
+      [1.5, 0.03, 0.045],
+    ] as const) {
+      const at = t + delay;
+      const o = a.osc('sine', 660 * mult, at);
+      const g = a.env(at, amp, 0.004, 0.09);
+      o.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.4);
+      o.start(at);
+      o.stop(at + 0.3);
+    }
+
+    const n = a.noise();
+    const nf = a.filter('bandpass', 3200, 2);
+    nf.frequency.exponentialRampToValueAtTime(5200, t + 0.09);
+    const ng = a.env(t, 0.022, 0.006, 0.05);
+    n.connect(nf);
+    nf.connect(ng);
+    ng.connect(a.sfxBus);
+    n.start(t);
+    n.stop(t + 0.2);
   }
 
   /** Bounce off something too big. Dull, low, no sting — never a punishment. */

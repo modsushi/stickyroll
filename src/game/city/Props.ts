@@ -59,6 +59,13 @@ export interface PropInstance extends HashItem {
   x: number;
   y: number;
   z: number;
+  /**
+   * Height of the instance's *origin* — what the batch matrix was built with.
+   * `y` is the visual centre, which is what absorption wants; anything drawing
+   * a copy of this prop where it stands (the demolition outline) needs the
+   * origin instead, and deriving one from the other needs the model's bounds.
+   */
+  lift?: number;
   rotY: number;
   scale: number;
   absorbed: boolean;
@@ -139,6 +146,7 @@ export class Props {
       // Absorb tests are 2D, but the y of the prop's visual centre is used to
       // place it on the ball's surface at the right height.
       y: lift + src.size.y * scale * 0.5,
+      lift,
       rotY,
       scale,
       absorbed: false,

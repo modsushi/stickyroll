@@ -70,8 +70,44 @@ export const CHARACTER_HEIGHT = 1.8;
  * game — with `human` for citizens and `chunk` for the heavy things, so the
  * rare pickups stand out against a familiar background rather than every prop
  * having its own timbre.
+ *
+ * Two voices are events rather than timbres. `car` is the sprung metal *pluck*
+ * of a vehicle being scooped off its suspension — vehicles are the tier-6
+ * payoff the whole first half of a run is aiming at, and they were previously
+ * indistinguishable from a drivetrain or a shop column. `building` makes no
+ * pickup sound at all: a demolition is loud enough on its own, and it is fired
+ * from the `demolish` event instead (see `Sfx.demolish`).
  */
-export type Voice = 'tiny' | 'wood' | 'metal' | 'soft' | 'heavy' | 'human';
+export type Voice = 'tiny' | 'wood' | 'metal' | 'soft' | 'heavy' | 'human' | 'car' | 'building';
+
+/**
+ * Whether rolling over this thing levels a building rather than absorbing a
+ * prop. The four catalog buildings — two shopfronts and two houses — are the
+ * only props that get the highlight/demolition treatment, and `voice` is the
+ * single marker for it so there is nothing to keep in sync.
+ */
+export const isBuilding = (def: PropSpec) => def.voice === 'building';
+
+/** Memoised by `minBuildingSize`; cleared whenever the catalog is resolved. */
+let _minBuilding = -1;
+
+/**
+ * The smallest ball radius that can bring *any* building down.
+ *
+ * Sticking uses it to skip the demolition-lock scan outright for the first
+ * two-thirds of a run, which is the only reason that scan can afford to sweep a
+ * wider disc than the vacuum does. Derived rather than authored so it cannot
+ * drift away from the catalog — measuring the models is what sets it.
+ */
+export function minBuildingSize(): number {
+  if (_minBuilding < 0) {
+    _minBuilding = Infinity;
+    for (const def of Object.values(PROPS)) {
+      if (isBuilding(def)) _minBuilding = Math.min(_minBuilding, def.absorbSize);
+    }
+  }
+  return _minBuilding;
+}
 
 export interface PropSpec {
   id: string;
@@ -155,18 +191,18 @@ const SPECS: PropSpec[] = [
   // ── Tier 5 · big street furniture and small vehicles ──────────────────
   { id: 'fence', kit: 'suburban', model: 'fence', tier: 5, label: 'Picket Fence', voice: 'wood' },
   { id: 'tree-large', kit: 'suburban', model: 'tree-large', tier: 5, label: 'Oak Tree', voice: 'soft', pointsBias: 1.4 },
-  { id: 'kart', kit: 'cars', model: 'kart-oobi', tier: 5, label: 'Go-Kart', voice: 'heavy' },
+  { id: 'kart', kit: 'cars', model: 'kart-oobi', tier: 5, label: 'Go-Kart', voice: 'car' },
   { id: 'parasol', kit: 'commercial', model: 'detail-parasol-a', tier: 5, label: 'Cafe Parasol', voice: 'soft' },
   { id: 'parasol-b', kit: 'commercial', model: 'detail-parasol-b', tier: 5, label: 'Patio Parasol', voice: 'soft' },
 
   // ── Tier 6 · cars. The moment the game changes gear. ──────────────────
-  { id: 'sedan', kit: 'cars', model: 'sedan', tier: 6, label: 'Sedan', voice: 'heavy' },
-  { id: 'taxi', kit: 'cars', model: 'taxi', tier: 6, label: 'Taxi', voice: 'heavy', pointsBias: 1.3 },
-  { id: 'police', kit: 'cars', model: 'police', tier: 6, label: 'Police Car', voice: 'heavy', pointsBias: 1.5 },
-  { id: 'suv', kit: 'cars', model: 'suv', tier: 6, label: 'SUV', voice: 'heavy' },
-  { id: 'hatchback', kit: 'cars', model: 'hatchback-sports', tier: 6, label: 'Hatchback', voice: 'heavy' },
+  { id: 'sedan', kit: 'cars', model: 'sedan', tier: 6, label: 'Sedan', voice: 'car' },
+  { id: 'taxi', kit: 'cars', model: 'taxi', tier: 6, label: 'Taxi', voice: 'car', pointsBias: 1.3 },
+  { id: 'police', kit: 'cars', model: 'police', tier: 6, label: 'Police Car', voice: 'car', pointsBias: 1.5 },
+  { id: 'suv', kit: 'cars', model: 'suv', tier: 6, label: 'SUV', voice: 'car' },
+  { id: 'hatchback', kit: 'cars', model: 'hatchback-sports', tier: 6, label: 'Hatchback', voice: 'car' },
   { id: 'sign-highway', kit: 'roads', model: 'sign-highway', tier: 6, label: 'Road Sign', voice: 'metal' },
-  { id: 'van', kit: 'cars', model: 'van', tier: 6, label: 'Van', voice: 'heavy' },
+  { id: 'van', kit: 'cars', model: 'van', tier: 6, label: 'Van', voice: 'car' },
 
   // ── Street life: furniture kit ────────────────────────────────────────
   // These are what turn a scatter of debris into somewhere people were. Tiers
@@ -212,15 +248,15 @@ const SPECS: PropSpec[] = [
   { id: 'market-column', kit: 'market', model: 'column', tier: 4, label: 'Shop Column', voice: 'heavy' },
 
   // ── Tier 7 · trucks and houses ────────────────────────────────────────
-  { id: 'ambulance', kit: 'cars', model: 'ambulance', tier: 7, label: 'Ambulance', voice: 'heavy', pointsBias: 1.4 },
-  { id: 'firetruck', kit: 'cars', model: 'firetruck', tier: 7, label: 'Fire Truck', voice: 'heavy', pointsBias: 1.5 },
-  { id: 'garbage-truck', kit: 'cars', model: 'garbage-truck', tier: 7, label: 'Garbage Truck', voice: 'heavy' },
-  { id: 'house-a', kit: 'suburban', model: 'building-type-a', tier: 7, label: 'Cottage', voice: 'heavy' },
-  { id: 'house-k', kit: 'suburban', model: 'building-type-k', tier: 7, label: 'Family Home', voice: 'heavy' },
+  { id: 'ambulance', kit: 'cars', model: 'ambulance', tier: 7, label: 'Ambulance', voice: 'car', pointsBias: 1.4 },
+  { id: 'firetruck', kit: 'cars', model: 'firetruck', tier: 7, label: 'Fire Truck', voice: 'car', pointsBias: 1.5 },
+  { id: 'garbage-truck', kit: 'cars', model: 'garbage-truck', tier: 7, label: 'Garbage Truck', voice: 'car' },
+  { id: 'house-a', kit: 'suburban', model: 'building-type-a', tier: 7, label: 'Cottage', voice: 'building' },
+  { id: 'house-k', kit: 'suburban', model: 'building-type-k', tier: 7, label: 'Family Home', voice: 'building' },
 
   // ── Tier 8 · the skyline ──────────────────────────────────────────────
-  { id: 'shop-a', kit: 'commercial', model: 'building-a', tier: 8, label: 'Corner Shop', voice: 'heavy' },
-  { id: 'shop-d', kit: 'commercial', model: 'building-d', tier: 8, label: 'Boutique', voice: 'heavy' },
+  { id: 'shop-a', kit: 'commercial', model: 'building-a', tier: 8, label: 'Corner Shop', voice: 'building' },
+  { id: 'shop-d', kit: 'commercial', model: 'building-d', tier: 8, label: 'Boutique', voice: 'building' },
 ];
 
 export const PROP_SPECS: readonly PropSpec[] = SPECS;
@@ -233,6 +269,7 @@ export const PROPS: Record<string, PropDef> = {};
  * catalog's models are loaded and before any level is built.
  */
 export function resolveProps(lookup: (kit: KitId, model: string) => LoadedModel | undefined) {
+  _minBuilding = -1;
   for (const spec of SPECS) {
     const m = lookup(spec.kit, spec.model);
     if (!m) continue; // a missing model just drops that prop from the level

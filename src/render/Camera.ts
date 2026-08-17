@@ -14,6 +14,20 @@ import { clamp01, damp, elasticOut, lerp, smoothstep } from '../core/Math';
 const YAW = -Math.PI * 0.25; // fixed compass heading, matches the reference art
 
 /**
+ * The camera distance a shake amount of 1 was tuned against — the opening
+ * framing. Everything further out scales up from here, so an impact lands with
+ * the same force on screen whatever size the ball is.
+ */
+const SHAKE_BASE = 12;
+
+/**
+ * Dolly gain for `punch`. The camera pulls out by `PUNCH_GAIN / e` times the
+ * punch amount at the peak, so the tier-up's 0.85 lands at ~1.46 — a 2.46×
+ * framing, which is what the old per-frame accumulation produced at 60 fps.
+ */
+const PUNCH_GAIN = 4.67;
+
+/**
  * Phones get a looser frame than desktops.
  *
  * The framing below is one set of numbers for a screen of any size, and on a
@@ -44,6 +58,8 @@ export class FollowCamera {
   private height = 9;
   private lookAhead = new Vector3();
   private kick = 0;
+  /** The kick's visible envelope: ramps in, eases out. See `update`. */
+  private surge = 0;
 
   constructor(private cam: PerspectiveCamera) {}
 
@@ -88,6 +104,12 @@ export class FollowCamera {
     const f = this.framing(radius);
     this.dist = f.dist;
     this.height = f.height;
+    // A snap is a cut, so nothing survives it. The camera outlives a run, and
+    // restarting mid tier-up used to carry that tier-up's punch into the first
+    // second of the new one.
+    this.kick = 0;
+    this.surge = 0;
+    this.shakeAmp = 0;
     this.update(pos, new Vector3(), radius, 1);
   }
 
@@ -111,18 +133,45 @@ export class FollowCamera {
     this.focus.y = damp(this.focus.y, ballPos.y + radius * 0.5, 0.0008, dt);
 
     this.kick = damp(this.kick, 0, 0.02, dt);
-    this.dist = damp(this.dist, f.dist, 0.02, dt) + this.kick * 3.5;
-    this.height = damp(this.height, f.height, 0.02, dt) + this.kick * 1.6;
+    this.dist = damp(this.dist, f.dist, 0.02, dt);
+    this.height = damp(this.height, f.height, 0.02, dt);
 
-    const cx = this.focus.x + Math.sin(YAW) * this.dist;
-    const cz = this.focus.z + Math.cos(YAW) * this.dist;
-    this.cam.position.set(cx, this.focus.y + this.height, cz);
+    // Impacts are a *fraction of the framing*, not a number of metres.
+    //
+    // The punch and the shake were both flat world offsets — 3.5 m of dolly,
+    // about half a metre of wobble. At the opening framing the camera is 11 m
+    // out and that is a real jolt; by tier 8 it is 38 m out and 55 m up, where
+    // the same numbers move the picture two or three pixels. So a tier-up — and
+    // then a demolition — quietly stopped being felt at exactly the point in
+    // the run where the biggest things happen.
+    //
+    // The offsets are applied *here*, to local values, and never written back
+    // into `this.dist`. Folding them into the smoothed state is how the
+    // original produced its punch — it added 3.5 m *per frame* and let the damp
+    // claw a few percent back, which stacked into a peak of about 2.5× the
+    // framing. Two problems with that: it diverges outright if the offset is
+    // made proportional, and being per-frame it was frame-rate dependent — the
+    // same tier-up whipped the camera out 2.5× at 60 fps and 3.9× at 120.
+    //
+    // `surge` reproduces the shape honestly instead: a follower chasing the
+    // decaying kick, which ramps over ~250 ms and eases back, peaking at
+    // `PUNCH_GAIN / e` times the kick. The gain is set so a tier-up peaks at
+    // the same 2.46× it used to at 60 fps — now at any refresh rate, and at any
+    // ball size rather than fading to 1.4× by the top tier.
+    this.surge = damp(this.surge, this.kick * PUNCH_GAIN, 0.02, dt);
+    const framing = this.dist / SHAKE_BASE;
+    const dist = this.dist * (1 + this.surge);
+    const height = this.height * (1 + this.surge * 0.46);
+
+    const cx = this.focus.x + Math.sin(YAW) * dist;
+    const cz = this.focus.z + Math.cos(YAW) * dist;
+    this.cam.position.set(cx, this.focus.y + height, cz);
 
     if (this.shakeAmp > 0.0005) {
       this.shakeT += dt;
       // Two decaying sines at incommensurate frequencies read as a real impact
       // rather than a vibration.
-      const e = this.shakeAmp * Math.exp(-this.shakeT * 7);
+      const e = this.shakeAmp * Math.exp(-this.shakeT * 7) * framing;
       const s = this.shakeSeed;
       this.cam.position.x += elasticOut(this.shakeT * 1.4, 11, 0) * e * 0.5 + Math.sin(s + this.shakeT * 53) * e * 0.18;
       this.cam.position.y += elasticOut(this.shakeT * 1.4, 17, 0) * e * 0.38;

@@ -1,7 +1,7 @@
 /**
  * One pooled instanced-quad system for every particle in the game: dust puffs
- * as the ball rolls, confetti on a tier-up, sparkles on a collectible, and
- * expanding impact rings.
+ * as the ball rolls, confetti on a tier-up, sparkles on a collectible, the
+ * heavy dust of a building coming down, and expanding impact rings.
  *
  * A single InstancedMesh with per-instance colour keeps the whole effects layer
  * at one draw call. Particles are billboarded on the CPU by copying the camera's
@@ -27,7 +27,7 @@ import { Rand } from '../core/Math';
 
 const MAX = 420;
 
-type Kind = 'dust' | 'confetti' | 'spark' | 'ring';
+type Kind = 'dust' | 'confetti' | 'spark' | 'ring' | 'smoke';
 
 interface P {
   alive: boolean;
@@ -143,6 +143,44 @@ export class Particles {
     p.color.setRGB(0.34, 0.31, 0.26).multiplyScalar(0.6 + speed * 0.03);
   }
 
+  /**
+   * The dust cloud of a building coming down.
+   *
+   * Distinct from `dust` in three ways that all matter at this scale: it is
+   * emitted in a ring at the footprint rather than under the ball, it *drags*
+   * (see `update`) so the cloud punches outward and then billows instead of
+   * flying away in straight lines, and it grows several times over its life.
+   * A collapse dressed with rolling dust looks like a puff of talcum.
+   *
+   * @param radius footprint of the building, in metres
+   * @param power  outward speed of the initial punch
+   */
+  smoke(x: number, y: number, z: number, count: number, radius: number, power: number) {
+    for (let i = 0; i < count; i++) {
+      const p = this.take();
+      p.alive = true;
+      p.kind = 'smoke';
+      const a = this.rand.angle();
+      // Biased to the outside: the middle of a collapse is hidden by its own
+      // rubble, and the cloud that reads is the one rolling off the edges.
+      const d = radius * this.rand.range(0.35, 1.05);
+      p.pos.set(x + Math.cos(a) * d, this.rand.range(0.1, y), z + Math.sin(a) * d);
+      const out = power * this.rand.range(0.45, 1);
+      p.vel.set(Math.cos(a) * out, this.rand.range(1.2, 3.6), Math.sin(a) * out);
+      p.life = p.maxLife = this.rand.range(1, 2);
+      p.size = radius * this.rand.range(0.35, 0.6);
+      p.endSize = radius * this.rand.range(1.3, 2.1);
+      // Barely any gravity: dust hangs, and a cloud that falls looks like sand.
+      p.gravity = -0.25;
+      p.rot = this.rand.angle();
+      p.spin = this.rand.range(-0.5, 0.5);
+      // Warm concrete grey, dimmer than the rolling dust because there is a lot
+      // more of it and additive blending stacks.
+      const v = this.rand.range(0.7, 1);
+      p.color.setRGB(0.44 * v, 0.4 * v, 0.35 * v);
+    }
+  }
+
   /** Tier-up confetti burst. */
   confetti(x: number, y: number, z: number, count: number, power: number) {
     for (let i = 0; i < count; i++) {
@@ -218,6 +256,10 @@ export class Particles {
 
       const t = 1 - p.life / p.maxLife;
       p.vel.y += p.gravity * dt;
+      // Dust is the one kind with air resistance. The punch outward has to stop
+      // quickly or the cloud keeps expanding at its launch speed for two whole
+      // seconds, which reads as debris rather than dust.
+      if (p.kind === 'smoke') p.vel.multiplyScalar(Math.max(0, 1 - 2.2 * dt));
       p.pos.addScaledVector(p.vel, dt);
       if (p.kind === 'confetti' && p.pos.y < 0.06) {
         // Settle on the ground rather than sinking through it.

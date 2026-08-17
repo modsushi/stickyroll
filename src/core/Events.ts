@@ -5,12 +5,41 @@
  */
 
 import type { PropDef } from '../data/props';
+import type { PropInstance } from '../game/city/Props';
 
 export interface GameEvents {
   /** A prop was absorbed. `screen` is already projected for the popup layer. */
   stick: { def: PropDef; points: number; combo: number; world: { x: number; y: number; z: number } };
   /** Ball hit something too big to eat. */
   reject: { def: PropDef; speed: number };
+  /**
+   * A building the ball is now big enough to level came within range, or left
+   * it again. The pair drives the highlight; the demolition itself is
+   * `demolish`, which may or may not follow.
+   *
+   * The payload is the live `PropInstance` rather than a copy because the
+   * effect needs the thing's geometry, material and exact placement to draw an
+   * outline over it — and because identity is what pairs a lock with its
+   * release. Type-only import, so nothing in `core/` depends on `game/` at
+   * runtime.
+   */
+  lockOn: { prop: PropInstance };
+  lockOff: { prop: PropInstance };
+  /**
+   * A building was rolled over. Fired from the absorb path *after* the weld, so
+   * by the time anything sees this the prop is already hidden and riding the
+   * ball — the effect is drawing its funeral, not its last moment.
+   *
+   * `power` is 0..1 by size, and drives how loud, low and long every part of
+   * the demolition is.
+   */
+  demolish: {
+    prop: PropInstance;
+    impact: { x: number; z: number };
+    power: number;
+    /** The ball's visual radius at the moment of impact. */
+    ballRadius: number;
+  };
   /** Growth crossed a tier boundary. */
   tierUp: { tier: number; radius: number; prevRadius: number };
   /** A level collectible was picked up. */

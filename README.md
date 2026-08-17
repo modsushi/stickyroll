@@ -111,7 +111,7 @@ scripts/prepare-assets.mjs   copies the needed GLBs + textures into public/
 src/
   main.ts        boot, the frame loop, and all the cross-system wiring
   core/          Loop, Input, Assets, Events, Save, Math
-  render/        Renderer, FollowCamera, PostFX, Decals, Particles
+  render/        Renderer, FollowCamera, PostFX, Decals, Particles, Demolition
   audio/         AudioEngine, Sfx, Music — all procedural
   game/          Ball, Sticking, BallBaker, Growth, Score, Collectibles,
                  SpatialHash, Game, city/{CityBuilder,Props,Traffic,Pedestrians}
@@ -162,6 +162,58 @@ into the geometry at load, so everything downstream works in one world where
 **Prop difficulty is derived, not authored.** `absorbSize`, `mass` and `points`
 are computed from each model's measured bounds. Per-prop `absorbBias` /
 `massBias` / `pointsBias` are the knobs for when feel should beat physics.
+
+**A prop's `voice` is also its class.** Most of it is what the pickup sounds
+like, but two entries mean more than that. `car` gets a sprung metal *pluck* —
+the pop family's rising bend inverted into a falling one — so the tier-6 payoff
+is audibly a different event from the drivetrain it used to share a thud with.
+`building` makes no pickup sound at all and is the single marker (via
+`isBuilding`) for the four props that get demolished rather than merely
+absorbed. Adding a fifth destructible building is one line: give it
+`voice: 'building'`.
+
+**Demolitions are a four-beat sequence, and they are staged around the ball.**
+`render/Demolition.ts` draws the whole thing off three events — `lockOn` /
+`lockOff` telegraph the building with a warm glow and a ring on its plot,
+`demolish` flashes its silhouette and throws the rubble. Two details are load
+bearing and easy to undo by accident:
+
+- **Everything spawns outside the ball's radius.** At tier 8 the ball is 11.6 m
+  across against a 4 m frontage, and it is standing on the plot. The first
+  version spawned rubble inside the building's footprint, which is behind an
+  opaque sphere — thirty blocks, none of them visible. Blocks, dust and both
+  ground rings are pushed out to the ball's edge, so the wreck erupts *around*
+  it.
+- **Rubble is sized against the framing, not the building.** A shopfront is
+  fitted to a 4 m plot, and at tier 8 the camera is 55 m up looking at an 11 m
+  ball — blocks cut as a fraction of the *building* come out as grit nobody can
+  see. `bulk` in `rubble()` takes the larger of the building and the ball.
+- **The rubble is one CPU-transformed mesh, not an `InstancedMesh`.** Instanced
+  lit draws render black on some Android GPUs (see `Batch.ts`), and per-instance
+  colour cannot carry a texture lookup — a block's colour on these kits is a UV,
+  not an RGB. Each block samples a random *triangle centroid* of the building it
+  came from (a vertex UV lands on an atlas patch boundary and comes out the
+  wrong colour), and dark samples are re-rolled against the atlas pixels, or
+  every pile is black window glass.
+
+**Camera shake and punch are fractions of the framing, not metres.** `shake(0.5)`
+used to mean half a metre of camera wobble, which is a jolt at the opening
+framing (11 m out) and two pixels at tier 8 (38 m out, 55 m up) — so impacts
+stopped being felt exactly where the biggest ones happen. Both now scale with
+the live camera distance, so one amount means one thing at every ball size.
+
+The punch also used to *accumulate*: it added its offset to the smoothed
+distance every frame and let the damp claw a few percent back, which peaked
+around 2.5× the framing at 60 fps and 3.9× at 120 — i.e. it was frame-rate
+dependent. `surge` in `render/Camera.ts` reproduces the same envelope as a
+follower chasing the decaying kick, which is refresh-rate independent and
+cannot diverge. Don't fold either offset back into `this.dist`.
+
+Only the buildings in the prop catalog can be levelled — `shop-a`, `shop-d`,
+`house-a`, `house-k`, so about a quarter of the frontages on downtown-01. The
+rest are `blocker: true` scenery at any ball size. Promoting more of them is a
+catalog edit, but it moves the level's mass and score budget, so re-derive
+`TIERS` and `stars` if you do.
 
 **Every model resolves to one shared material per kit.** That is what makes the
 rendering budget work: props instance, absorbed props weld together, and the

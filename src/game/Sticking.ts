@@ -16,7 +16,7 @@
 import { Matrix4, Object3D, Quaternion, Vector3 } from 'three';
 import { bus } from '../core/Events';
 import { Rand, clamp01 } from '../core/Math';
-import type { PropDef } from '../data/props';
+import { isBuilding, minBuildingSize, type PropDef } from '../data/props';
 import { perks } from '../meta/Upgrades';
 import type { Ball } from './Ball';
 import { BallBaker } from './BallBaker';
@@ -65,12 +65,36 @@ export interface Award {
 /** Cap on obstacles resolved per frame; more than this is a pathological pile. */
 const MAX_BLOCKERS = 12;
 
+/**
+ * How far outside the vacuum a building lights up as the ball's next victim.
+ *
+ * A demolition is over in a frame — contact, weld, rubble — and an effect with
+ * no wind-up reads as a glitch however good the rubble is. Lighting the
+ * frontage a few metres out gives the moment a beat of anticipation, and it
+ * doubles as an affordance: at the top tiers most of the skyline is still
+ * scenery, so a building that *can* come down should say so before you commit
+ * to the run-up.
+ *
+ * Three and a bit metres is roughly a third of a second at top-tier speed —
+ * long enough to register, short enough that half the street isn't glowing.
+ */
+const LOCK_RANGE = 3.4;
+
 export class Sticking {
   private rand = new Rand(0xbeef);
   /** Props absorbed this frame, reused to avoid per-frame allocation. */
   private harvested: PropInstance[] = [];
   /** Obstacles overlapping the ball this frame. Reused, never reallocated. */
   private blockers: { p: PropInstance; rr: number }[] = [];
+  /**
+   * Buildings currently lit up, and the set being rebuilt this frame. Two sets
+   * swapped rather than one rebuilt: the difference between them is exactly the
+   * `lockOn`/`lockOff` pair, and swapping means neither is ever reallocated.
+   */
+  private locked = new Set<PropInstance>();
+  private locking = new Set<PropInstance>();
+  /** Counts the fixed steps down to the next (20 Hz) lock scan. */
+  private lockTimer = 0;
   /** Rate-limits the reject thunk so scraping a wall isn't a machine gun. */
   private rejectCooldown = 0;
   /** Seconds spent blocked and barely moving; drives the anti-stick nudge. */
@@ -126,8 +150,57 @@ export class Sticking {
       this.absorb(p, award.points, award.combo);
     }
 
+    // After the harvest, so a building absorbed this frame is released *after*
+    // its demolition rather than being announced as a fresh target first.
+    this.scanLocks(eatSize, reach);
+
     const rejected = this.blockers.length > 0 && this.resolveBlockers();
     return { absorbed: this.harvested.length, rejected };
+  }
+
+  /**
+   * Lights up nearby buildings the ball has grown big enough to level.
+   *
+   * This is a second, wider query than the absorb sweep, which needs
+   * justifying: the vacuum only reaches a metre or so past the ball, and a
+   * telegraph that arrives a metre before impact is not a telegraph. Three
+   * things keep it cheap enough to be worth it:
+   *
+   *  - it does not run at all until the ball can eat *some* building, which is
+   *    the last third of a run at the earliest;
+   *  - it runs at 20 Hz rather than the 120 Hz of the fixed step, because a
+   *    highlight fading in over ~200 ms cannot tell the difference; and
+   *  - it only ever adds to a set, so the frames in between cost nothing.
+   */
+  private scanLocks(eatSize: number, reach: number) {
+    this.lockTimer -= 1 / 120;
+    if (this.lockTimer > 0) return;
+    this.lockTimer = 1 / 20;
+
+    if (eatSize >= minBuildingSize()) {
+      const ball = this.ball;
+      const range = reach + eatSize * 0.5 + LOCK_RANGE;
+      this.hash.query(ball.pos.x, ball.pos.z, range, (p) => {
+        if (p.absorbed || p.blocker || !isBuilding(p.def) || p.def.absorbSize > eatSize) return;
+        const dx = p.x - ball.pos.x;
+        const dz = p.z - ball.pos.z;
+        const rr = reach + p.def.absorbSize * 0.5 + LOCK_RANGE;
+        if (dx * dx + dz * dz <= rr * rr) this.locking.add(p);
+      });
+    }
+
+    for (const p of this.locking) {
+      if (!this.locked.has(p)) bus.emit('lockOn', { prop: p });
+    }
+    for (const p of this.locked) {
+      if (!this.locking.has(p)) bus.emit('lockOff', { prop: p });
+    }
+    // Swap and clear rather than rebuild: no allocation, and `locked` is always
+    // exactly what the effect layer currently has lit.
+    const swap = this.locked;
+    this.locked = this.locking;
+    this.locking = swap;
+    this.locking.clear();
   }
 
   /**
@@ -296,6 +369,21 @@ export class Sticking {
       combo,
       world: { x: p.x, y: p.y, z: p.z },
     });
+
+    // A building does not merely stick — it comes down. The weld above still
+    // happens (the ball is carrying a shopfront afterwards, which is the whole
+    // point of the genre); this is the event that draws and sounds the wreck it
+    // left behind. `power` spreads the two houses and the two shopfronts across
+    // the range, so a cottage is audibly a smaller thing than a boutique.
+    if (isBuilding(p.def)) {
+      this.locked.delete(p);
+      bus.emit('demolish', {
+        prop: p,
+        impact: { x: ball.pos.x, z: ball.pos.z },
+        power: clamp01((p.def.absorbSize - 3) / 2.5),
+        ballRadius: ball.visualRadius,
+      });
+    }
 
     // Heavier things thump the ball visibly.
     if (p.def.mass > 30) ball.bump(clamp01(p.def.mass / 400) * 0.7);
