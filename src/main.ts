@@ -36,7 +36,7 @@ import { Shop } from './ui/Shop';
 import { el } from './ui/dom';
 
 /** Bumped by hand so a screenshot proves which build is being tested. */
-const BUILD = 'build 2026-08-18b';
+const BUILD = 'build 2026-08-18c';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;

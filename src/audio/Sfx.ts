@@ -35,6 +35,21 @@ const ROOT = 220; // A3
 const semi = (n: number) => ROOT * Math.pow(2, n / 12);
 
 /**
+ * The chord a run of collectibles walks up, in semitones from the root.
+ *
+ * A major 6/9 — root, major third, fifth, sixth, ninth — spread over two
+ * octaves. Chosen because it has no dissonant pair anywhere in it: whichever
+ * notes happen to be still ringing when the next one lands, the combination is
+ * consonant. A plain major triad would also be safe but repeats every three
+ * steps and starts to sound like a bugle call; adding the sixth and ninth keeps
+ * eight steps distinct while staying sweet.
+ *
+ * Eight entries plus one, because the run counter caps at 7 and set two starts
+ * two degrees in — the last index has to exist for both.
+ */
+const COLLECT_CHORD = [0, 4, 7, 9, 12, 16, 19, 21, 24];
+
+/**
  * Where each voice sits, as the pop's landing pitch in Hz.
  *
  * Small things pop high and short, big things low and round. Everything except
@@ -346,16 +361,26 @@ class Sfx {
   /**
    * Collectible pickup: bright, coin-like, unmistakably different.
    *
-   * A run of them climbs. This is the one place a pitch ladder belongs — the
-   * thing that was stripped out of the ordinary pickup for sounding like a slot
-   * machine. The difference is duration: that ladder ran for a whole level and
-   * became the texture of the game, while this one lasts as long as it takes to
-   * roll through a taper of cones and resets half a second later. A rising run
-   * is exactly what makes clearing a cluster in one pass feel like a payoff
-   * rather than six copies of the same noise stacked on one frame.
+   * A run of them **arpeggiates a chord**. This is the one place a pitch ladder
+   * belongs — the thing that was stripped out of the ordinary pickup for
+   * sounding like a slot machine. The difference is duration: that ladder ran
+   * for a whole level and became the texture of the game, while this one lasts
+   * as long as it takes to roll through a cordon of cones and resets half a
+   * second later.
    *
-   * `index` is the set, so the two collections start from different notes and
-   * you can hear *which* one you just grabbed without looking at the cards.
+   * The first version stepped in whole tones, and it was wrong for a reason
+   * worth writing down. Each note rings for about 300 ms while rolling through
+   * seven cones takes under a second, so four or five of them are always
+   * sounding *together* — the run is not a melody, it is a chord being built up
+   * one note at a time. A whole-tone scale is the one scale with no tonal
+   * centre at all (it is what film scores use for dream sequences), so stacking
+   * it produced a cluster with nothing to resolve to. Walking a chord's own
+   * degrees means every note that overlaps any other is already consonant with
+   * it, whichever ones the player happens to catch.
+   *
+   * `index` is the set: rather than transposing — which would drop set two into
+   * a different key — it starts two degrees up the *same* chord, so the two
+   * collections are audibly distinct and still harmonise if they interleave.
    */
   collect(index: number) {
     const a = audio;
@@ -366,8 +391,8 @@ class Sfx {
     else this.collectRun = 0;
     this.lastCollect = t;
 
-    // Whole tones, so a long run stays consonant however far up it gets.
-    const base = semi(12 + (index % 2) * 3 + this.collectRun * 2);
+    const step = Math.min(this.collectRun + (index % 2) * 2, COLLECT_CHORD.length - 1);
+    const base = semi(12 + COLLECT_CHORD[step]);
 
     // Two detuned sines = the classic coin beat.
     for (const [mult, detune] of [
@@ -386,14 +411,22 @@ class Sfx {
     }
 
     // FM ping for the metallic sparkle.
+    //
+    // Backed off as the run climbs. The 5.4 modulator ratio is deliberately
+    // inharmonic — that is what makes one coin sound like struck metal rather
+    // than a flute — but inharmonic sidebands are exactly what does *not* stack.
+    // One is a sparkle; seven overlapping is a saucepan. The chord underneath
+    // keeps its full level, so a fast sweep gets cleaner and more tonal as it
+    // rises rather than simply quieter.
+    const sparkle = 1 - Math.min(this.collectRun, 6) * 0.11;
     const carrier = a.osc('sine', base * 4, t);
     const mod = a.osc('sine', base * 5.4, t);
     const modGain = a.gain(base * 3);
-    modGain.gain.setValueAtTime(base * 3, t);
+    modGain.gain.setValueAtTime(base * 3 * sparkle, t);
     modGain.gain.exponentialRampToValueAtTime(1, t + 0.16);
     mod.connect(modGain);
     modGain.connect(carrier.frequency);
-    const cg = a.env(t, 0.09, 0.002, 0.16);
+    const cg = a.env(t, 0.09 * sparkle, 0.002, 0.16);
     carrier.connect(cg);
     cg.connect(a.sfxBus);
     a.send(cg, 0.5);
