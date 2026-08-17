@@ -17,6 +17,7 @@ import { Matrix4, Object3D, Quaternion, Vector3 } from 'three';
 import { bus } from '../core/Events';
 import { Rand, clamp01 } from '../core/Math';
 import type { PropDef } from '../data/props';
+import { perks } from '../meta/Upgrades';
 import type { Ball } from './Ball';
 import { BallBaker } from './BallBaker';
 import type { SpatialHash } from './SpatialHash';
@@ -88,7 +89,11 @@ export class Sticking {
   update(onAbsorb: (p: PropInstance, def: PropDef) => Award): StickResult {
     const ball = this.ball;
     const r = ball.visualRadius;
-    const reach = r * REACH + REACH_BONUS;
+    // Magnetism widens the vacuum only. The blocking radius is deliberately left
+    // alone: growing it too would mean an upgraded ball collides with buildings
+    // from further away, so a perk sold as "reach further" would make the city
+    // feel like it had grown invisible walls.
+    const reach = (r * REACH + REACH_BONUS) * perks().reachMult;
     const block = r * BLOCK;
     const eatSize = r * ABSORB_RATIO;
 

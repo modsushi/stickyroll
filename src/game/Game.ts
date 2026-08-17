@@ -13,6 +13,8 @@ import { save } from '../core/Save';
 import { PROPS, catalogModels, resolveProps, type KitId } from '../data/props';
 import { DOWNTOWN } from '../levels/downtown-01';
 import type { LevelDef } from '../levels/types';
+import { goldFromScore, xpFromRun } from '../meta/Progression';
+import { perks } from '../meta/Upgrades';
 import { FollowCamera } from '../render/Camera';
 import type { Renderer } from '../render/Renderer';
 import { Ball } from './Ball';
@@ -50,6 +52,19 @@ export class Game {
 
   timeLeft = 0;
   private lastCountdown = -1;
+
+  /**
+   * The mid-run upgrade draft fires once per run, at whichever comes first: the
+   * ball reaching the middle tier, or half the clock running out.
+   *
+   * Both conditions are needed. Tier alone means a player having a bad run
+   * never sees the reward that would have helped, which is precisely backwards.
+   * Time alone means a strong player gets it long after the point where it
+   * changes anything. Whichever fires first is the moment the run stops being
+   * new and starts needing a lift.
+   */
+  private static readonly DRAFT_TIER = 4;
+  private draftOffered = false;
 
   /**
    * Debug autopilot, used by `fastForward` to reach a high tier for profiling.
@@ -130,11 +145,12 @@ export class Game {
     scene.add(this.traffic.group, this.peds.group, this.decals.group, this.particles.group);
     scene.add(this.ball.group);
 
-    this.ball.reset();
+    this.ball.reset(perks().startMass);
     this.ball.pos.set(this.city.start.x, this.ball.radius, this.city.start.z);
     this.score.reset();
-    this.timeLeft = this.level.time;
+    this.timeLeft = this.level.time + perks().extraTime;
     this.lastCountdown = -1;
+    this.draftOffered = false;
     // `end()` disables input so the results screen can't be played behind.
     // A fresh run has to hand it back, or Play Again deals you a ball that
     // ignores every drag.
@@ -146,6 +162,27 @@ export class Game {
 
   start() {
     if (this.state === 'ready' || this.state === 'paused') this.state = 'playing';
+  }
+
+  /**
+   * Freezes the simulation for a modal that is *not* the pause menu — the
+   * mid-run upgrade draft.
+   *
+   * Deliberately silent: `setPaused` emits `pause`, which is what opens the
+   * pause panel, so reusing it here would stack the pause screen underneath the
+   * draft. Two ways to stop the world is one more than ideal, but the
+   * alternative is a `reason` argument threaded through every pause listener.
+   */
+  suspend() {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    this.input.enabled = false;
+  }
+
+  unsuspend() {
+    if (this.state !== 'paused') return;
+    this.state = 'playing';
+    this.input.enabled = true;
   }
 
   setPaused(paused: boolean) {
@@ -177,7 +214,7 @@ export class Game {
     this.sticking.update((p, def): Award => {
       const points = this.score.award(def.points, def.id);
       this.collectibles.onAbsorb(def.id, p);
-      const crossed = this.ball.growth.add(def.mass);
+      const crossed = this.ball.growth.add(def.mass * perks().massMult);
       if (crossed >= 0) this.onTierUp(crossed);
       return { points, combo: this.score.comboTier };
     });
@@ -188,12 +225,29 @@ export class Game {
     this.collectibles.step(dt);
 
     this.timeLeft -= dt;
+    this.checkDraft();
     const secs = Math.ceil(this.timeLeft);
     if (secs <= 10 && secs !== this.lastCountdown && secs > 0) {
       this.lastCountdown = secs;
       bus.emit('timeUp', undefined as never);
     }
     if (this.timeLeft <= 0) this.end();
+  }
+
+  /**
+   * Fires the one mid-run upgrade draft. See `DRAFT_TIER` for why there are two
+   * triggers.
+   *
+   * Emits a request and returns; pausing and showing the cards is the screen
+   * flow's job, exactly like `pauseRequest`. The simulation deliberately does
+   * not know that an upgrade screen exists.
+   */
+  private checkDraft() {
+    if (this.draftOffered || this.autopilot) return;
+    const halfway = this.timeLeft <= (this.level.time + perks().extraTime) * 0.5;
+    if (this.ball.growth.tier < Game.DRAFT_TIER && !halfway) return;
+    this.draftOffered = true;
+    bus.emit('rewardOffer', undefined as never);
   }
 
   /**
@@ -325,7 +379,11 @@ export class Game {
     this.camera.update(this.ball.pos, this.ball.vel, this.ball.visualRadius, dt);
     this.renderer.focusShadow(this.ball.pos, this.ball.visualRadius);
     this.traffic?.render(dt);
-    this.peds?.render(dt);
+    if (this.peds) {
+      // The `!` marks are CPU-billboarded, same as the particle layer.
+      this.peds.billboard.copy(this.renderer.camera.quaternion);
+      this.peds.render(dt);
+    }
     this.decals?.update(this.ball);
     this.particles?.update(dt);
     this.collectibles?.render(dt);
@@ -337,13 +395,23 @@ export class Game {
     this.input.enabled = false;
 
     // Time bonus rewards finishing early on a cleared street; set bonuses reward
-    // completing a collection.
+    // completing a collection. Grand Finale scales both.
+    const finale = perks().finaleMult;
     const timeBonus = Math.max(0, Math.floor(this.timeLeft) * 10);
     const setBonus = this.collectibles.completedSets * 2500;
-    if (timeBonus + setBonus > 0) this.score.addBonus(timeBonus + setBonus);
+    const bonus = Math.round((timeBonus + setBonus) * finale);
+    if (bonus > 0) this.score.addBonus(bonus);
 
     const stars = this.level.stars.reduce((n, t) => (this.score.score >= t ? n + 1 : n), 0);
     save.recordLevel(this.level.id, this.score.score, stars, this.score.bestCombo);
+
+    // XP is banked here rather than on the results screen: it is not a choice,
+    // it cannot be declined, and a player who closes the tab during the count-up
+    // should still have earned it. Gold is the opposite — it is *claimed*, so it
+    // stays pending until the button is pressed.
+    const xp = xpFromRun(this.score.score, this.ball.growth.tier, stars);
+    save.addXp(xp);
+    save.countRun();
 
     bus.emit('levelEnd', {
       score: this.score.score,
@@ -352,6 +420,8 @@ export class Game {
       absorbed: this.score.absorbed,
       tier: this.ball.growth.tier,
       collected: this.collectibles.summary(),
+      gold: goldFromScore(this.score.score, perks().goldMult),
+      xp,
     });
   }
 

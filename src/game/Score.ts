@@ -13,6 +13,7 @@
 
 import { bus } from '../core/Events';
 import { save } from '../core/Save';
+import { perks } from '../meta/Upgrades';
 
 /**
  * The window has to be short enough that *stopping* breaks the chain. Tuned
@@ -43,8 +44,14 @@ export class Score {
     return Math.floor(this.combo / PER_TIER);
   }
 
+  /**
+   * The Chain Keeper upgrade scales the whole window, ceiling included. Leaving
+   * MAX_WINDOW fixed would have made the upgrade quietly stop working once the
+   * combo was a few tiers deep — the exact moment the player is relying on it.
+   */
   get window() {
-    return Math.min(MAX_WINDOW, BASE_WINDOW + this.comboTier * 0.07);
+    const mult = perks().comboMult;
+    return Math.min(MAX_WINDOW * mult, (BASE_WINDOW + this.comboTier * 0.07) * mult);
   }
 
   /** Fraction of the combo window remaining — the HUD ring drains with this. */
@@ -60,7 +67,7 @@ export class Score {
     if (this.combo > this.bestCombo) this.bestCombo = this.combo;
     bus.emit('comboChange', { combo: this.combo, best: this.bestCombo });
 
-    const points = Math.max(1, Math.round(basePoints * this.multiplier));
+    const points = Math.max(1, Math.round(basePoints * this.multiplier * perks().scoreMult));
     this.score += points;
     save.addToCollection(propId);
     bus.emit('scoreChange', { score: this.score, delta: points });

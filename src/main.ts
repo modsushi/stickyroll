@@ -24,15 +24,19 @@ import { runBench, showBench } from './render/Bench';
 import { FlyCamera } from './render/FlyCamera';
 import { on, param } from './core/Debug';
 import { runSelfTest, showSelfTest } from './render/SelfTest';
+import { skinById, tickSkins } from './meta/Skins';
 import { Boot } from './ui/Boot';
 import { Collection } from './ui/Collection';
+import { DailyReward } from './ui/DailyReward';
 import { Hud } from './ui/Hud';
 import { Pause } from './ui/Pause';
 import { Results } from './ui/Results';
+import { RewardPicker } from './ui/RewardPicker';
+import { Shop } from './ui/Shop';
 import { el } from './ui/dom';
 
 /** Bumped by hand so a screenshot proves which build is being tested. */
-const BUILD = 'build 2026-08-17h';
+const BUILD = 'build 2026-08-18b';
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -53,6 +57,9 @@ const hud = new Hud(uiRoot, game);
 const pause = new Pause(uiRoot);
 const results = new Results(uiRoot);
 const collection = new Collection(uiRoot, renderer);
+const shop = new Shop(uiRoot, renderer);
+const daily = new DailyReward(uiRoot);
+const rewards = new RewardPicker(uiRoot);
 const fly = new FlyCamera(renderer.camera, canvas);
 hud.stickState = () => input.stick;
 
@@ -109,7 +116,9 @@ bus.on('tierUp', (e) => {
   sfx.tierUp(e.tier);
   music.setTier(e.tier);
 });
-bus.on('collect', () => sfx.collect(0));
+bus.on('goldChange', () => boot.refresh());
+// The slot picks the starting note, so the two sets are audibly different.
+bus.on('collect', (e) => sfx.collect(e.slot));
 bus.on('collectComplete', () => sfx.fanfare());
 bus.on('timeUp', () => sfx.countdown(game.timeLeft <= 5));
 
@@ -169,10 +178,44 @@ results.onRetry = () => {
   restart();
 };
 results.onCollection = () => collection.show();
+results.onShop = () => shop.show();
 
-collection.onClose = () => {
+// ── meta screens ──────────────────────────────────────────────────────────
+//
+// All three return to whatever was underneath them. `game.state === 'paused'`
+// is the tell that the pause menu opened them, since the results screen leaves
+// the game 'ended' and the boot menu leaves it 'ready'.
+const backToWhereWeCameFrom = () => {
   if (game.state === 'paused') pause.show();
 };
+
+collection.onClose = backToWhereWeCameFrom;
+shop.onClose = () => {
+  backToWhereWeCameFrom();
+  boot.refresh(); // harmless once the boot screen is gone
+};
+// Equipping re-skins the live ball immediately: the whole point of buying one
+// is seeing it, and waiting for the next run to start would bury the payoff.
+shop.onEquip = (id) => game.ball.setSkin(skinById(id));
+
+pause.onShop = () => shop.show();
+pause.onDaily = () => void daily.show().then(backToWhereWeCameFrom);
+
+/**
+ * The mid-run upgrade draft.
+ *
+ * Suspends rather than pauses, so the pause panel doesn't stack underneath, and
+ * ducks the mix the way every other modal does. `rewardOffer` fires from inside
+ * the fixed step, so this handler must not assume it can run synchronously —
+ * it doesn't; the step finishes and the loop simply finds the game suspended.
+ */
+bus.on('rewardOffer', async () => {
+  game.suspend();
+  audio.duck(0.5);
+  await rewards.show();
+  audio.duck(0);
+  game.unsuspend();
+});
 
 function restart() {
   results.hide();
@@ -194,8 +237,14 @@ const loop = new Loop(
 
     // Rolling audio + dust are driven from the same speed value, so what you
     // hear and what you see always agree.
+    // Animated skins share one clock, advanced here so a paused game holds its
+    // pattern still rather than drifting behind a modal.
+    if (game.state === 'playing') tickSkins(dt);
+
     const speed = Math.hypot(game.ball.vel.x, game.ball.vel.z);
-    const maxSpeed = 5.6 + game.ball.growth.tier * 1.15;
+    // Reads the ball's real ceiling, upgrades included, so the rolling loop
+    // doesn't max out early on an upgraded ball.
+    const maxSpeed = game.ball.maxSpeed;
     music.update(dt);
     music.setRolling(game.state === 'playing' ? speed : 0, maxSpeed, game.ball.visualRadius);
 
@@ -353,11 +402,35 @@ const loop = new Loop(
   boot.setProgress(1);
   boot.ready(TIERS.length);
 
-  boot.onPlay = async () => {
+  // Every boot button doubles as the audio unlock gesture, not just Play — a
+  // player who opens the shop first and starts a run afterwards would otherwise
+  // get a silent game.
+  const unlock = async () => {
     await audio.unlock();
+    sfx.click();
+  };
+
+  boot.onShop = async () => {
+    await unlock();
+    shop.show();
+  };
+  boot.onDaily = async () => {
+    await unlock();
+    await daily.show();
+    boot.refresh();
+  };
+
+  boot.onPlay = async () => {
+    await unlock();
+    // Today's reward is offered on the way into the first run rather than on
+    // arrival: before Play there has been no gesture, so the claim would happen
+    // in silence. One extra tap, and it lands with its coin shower intact.
+    if (DailyReward.pending) {
+      await daily.show();
+      boot.refresh();
+    }
     music.start();
     music.setTier(0);
-    sfx.click();
     boot.hide();
     hud.show(true);
     game.start();

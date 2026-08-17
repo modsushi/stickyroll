@@ -313,7 +313,11 @@ export const DOWNTOWN: LevelDef = {
     {
       id: 'roadworks',
       on: ['#'],
-      count: 26,
+      // Trimmed from 26 twice over: once to leave the carriageway room for the
+      // cordons below, and again once the per-item placement bug was fixed and
+      // these started putting *all* their props down instead of the one in ten
+      // that used to survive.
+      count: 14,
       radius: 2.2,
       minFromStart: 14,
       items: [
@@ -322,6 +326,55 @@ export const DOWNTOWN: LevelDef = {
         { prop: 'cone', x: 0, z: 1.1 },
         { prop: 'cone', x: 0, z: -1.1 },
         { prop: 'work-light', x: 1.4, z: 1.2 },
+      ],
+    },
+    // A cordon: seven cones ringing a work light, the whole set jumping at once
+    // when the ball rolls through it.
+    //
+    // The roadworks above are deliberately kept at two cones each, because
+    // *most* cones should still be found in ones and twos — that is what makes
+    // sweeping a street feel like sweeping rather than looting. These are the
+    // exception, and they are worth far more for being rare.
+    //
+    // Every offset stays inside ±1.7 m for a reason. A cluster's centre is the
+    // only part guaranteed to land on an allowed tile; each item is then tested
+    // individually, and a road tile is 4 m across. The first version of this was
+    // a lane taper spanning 5.8 m, and it placed exactly zero cones — every
+    // instance had most of its items rejected into the pavement and was thrown
+    // away. Road arrangements have to fit in one tile.
+    {
+      id: 'cone-cordon',
+      on: ['#'],
+      count: 5,
+      radius: 2.6,
+      minFromStart: 16,
+      items: [
+        { prop: 'cone', x: -1.3, z: -1.4 },
+        { prop: 'cone', x: -0.2, z: -1.7 },
+        { prop: 'cone', x: 1.1, z: -1.3 },
+        { prop: 'cone', x: -1.6, z: 0.1 },
+        { prop: 'cone', x: 1.5, z: 0.2 },
+        { prop: 'cone', x: -0.9, z: 1.5 },
+        { prop: 'cone', x: 0.7, z: 1.6 },
+        { prop: 'work-light', x: 0, z: 0 },
+      ],
+    },
+    // Oak groves. The `T` tiles scatter single trees, which is a park — but a
+    // single tree is also a single collectible, so the oak set was a hunt for
+    // eleven separate things spread over the whole district. A grove pays out
+    // four at once and reads as a better park besides.
+    {
+      id: 'oak-grove',
+      on: ['.'],
+      count: 3,
+      radius: 5.2,
+      minFromStart: 20,
+      freeRotation: true,
+      items: [
+        { prop: 'tree-large', x: -1.6, z: -1.3, scale: 1.1 },
+        { prop: 'tree-large', x: 1.7, z: -0.9, scale: 0.95 },
+        { prop: 'tree-large', x: -0.5, z: 1.8, scale: 1.05 },
+        { prop: 'tree-large', x: 2.2, z: 2.3, scale: 0.9 },
       ],
     },
   ],
@@ -341,9 +394,12 @@ export const DOWNTOWN: LevelDef = {
   pedestrianOn: [',', '.', 'P', 'M', 'C'],
   pedestrians: 52,
 
+  // Targets raised alongside the `cone-taper` and `oak-grove` clusters that
+  // supply them. Both were nudged rather than doubled: the point of the change
+  // is that the props now arrive in handfuls, not that the sets take longer.
   collectibles: [
-    { prop: 'cone', target: 20, label: 'Traffic Cones' },
-    { prop: 'tree-large', target: 10, label: 'Oak Trees' },
+    { prop: 'cone', target: 26, label: 'Traffic Cones' },
+    { prop: 'tree-large', target: 14, label: 'Oak Trees' },
   ],
 
   // Derived from the level's score budget, not guessed: ~10,800 base points are

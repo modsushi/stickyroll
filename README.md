@@ -119,8 +119,37 @@ src/
                  beyond it (`buildSurround`)
   data/props.ts  the prop catalog
   levels/        level format + downtown-01
-  ui/            DOM overlay: Boot, Hud, Pause, Results, Collection
+  meta/          between-run progression: Progression, Upgrades, Skins, Daily
+  ui/            DOM overlay: Boot, Hud, Pause, Results, Collection,
+                 RewardPicker, Shop, DailyReward
 ```
+
+## The meta game
+
+Everything under `src/meta/` runs between runs and persists in one localStorage
+save (`core/Save.ts`, schema v2 — v1 saves are migrated, not discarded).
+
+**Two currencies, two jobs.** XP is unspendable and only unlocks *kinds* of
+thing: upgrade types in the draft, skins in the shop. Gold is spendable and
+therefore always a trade-off. A run pays out both; the daily claim pays gold.
+
+- **Levels 1-10** (`Progression.ts`). ~2,600 XP and ~210 gold from a competent
+  180-second run, which puts level 10 about eighteen runs away.
+- **Upgrades** (`Upgrades.ts`). Ten perks, five ranks each. Halfway through
+  every run — at tier 4 or half the clock, whichever comes first — the game
+  suspends and offers three cards; taking one is permanent. Effects are read
+  live through `perks()`, so a card applies to the rest of the run that
+  granted it. Nothing in the pool is a downside or a dud.
+- **Skins** (`Skins.ts`). Twelve ball materials, mostly one GLSL injection into
+  the standard lit shader so they keep the game's real lighting, shadows and
+  fog. Purely cosmetic, deliberately: a skin that carried a stat would make the
+  shop a power ladder. **Every patched material needs its own
+  `customProgramCacheKey`** — three does not key compiled programs by
+  `onBeforeCompile`, so without it all twelve share one shader.
+- **Daily rewards** (`Daily.ts`). Seven-day cycle, 60 gold up to 600, compared
+  by *local calendar day* rather than elapsed hours so a streak never demands
+  you play later every day. Missing a day restarts the cycle and takes nothing
+  away.
 
 ## Things worth knowing before changing anything
 

@@ -15,6 +15,11 @@
  *   pop    everything ordinary — litter, cones, furniture, shop fittings
  *   human  citizens, so eating a person is unmistakable
  *   chunk  cars and other heavy things, a deeper pop with a thud under it
+ *
+ * Citizens get two sounds rather than one, and their *directions* are the whole
+ * design: `startle` whoops upward when someone spots the ball, `popHuman` yelps
+ * downward when they are rolled up. Both were once the same rising whoop, which
+ * made the encounter sound like one event happening twice.
  */
 
 import { audio } from './AudioEngine';
@@ -52,6 +57,12 @@ class Sfx {
   /** Rate-limits pickups so absorbing a dense cluster doesn't turn to mush. */
   private lastPickup = 0;
   private pickupsThisFrame = 0;
+  /** Same idea for startled citizens; a whole block reacts at once. */
+  private lastStartle = 0;
+  private startlesThisBurst = 0;
+  /** Drives the rising run when a cluster of collectibles is taken in one pass. */
+  private lastCollect = 0;
+  private collectRun = 0;
 
   /**
    * @param comboTier no longer changes pitch — only a little loudness and
@@ -132,30 +143,120 @@ class Sfx {
   }
 
   /**
-   * Citizens. A two-note upward "whoop" with a little vibrato — cartoon
-   * surprise rather than distress, since the whole point is that this is
-   * cheerful. Distinct enough that you always know you got a person.
+   * A citizen being rolled up: a comic yelp that falls away, plus a puff.
+   *
+   * The upward whoop this used to be has moved to `startle`, where it plays as
+   * someone spots the ball — it is a *surprise* noise, and surprise belongs at
+   * the moment of noticing rather than the moment of disappearing.
+   *
+   * So this one goes the other way. The pitch drops and the envelope cuts short
+   * while a soft noise puff blooms underneath, which reads as being whisked out
+   * of frame. Pairing a rising whoop with a falling one also means the two
+   * halves of an encounter answer each other instead of sounding like the same
+   * event twice.
    */
   private popHuman(t: number, freq: number, peak: number) {
     const a = audio;
+
+    // "Wa-oop" downward: a quick lift into the grab, then away.
     const o = a.osc('triangle', freq, t);
-    o.frequency.setValueAtTime(freq * 0.7, t);
-    o.frequency.exponentialRampToValueAtTime(freq * 1.5, t + 0.09);
-    o.frequency.exponentialRampToValueAtTime(freq * 1.32, t + 0.2);
+    o.frequency.setValueAtTime(freq * 1.18, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 1.34, t + 0.03);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.52, t + 0.17);
+
+    // Faster and deeper than the startle's vibrato, so the fall wobbles like a
+    // cartoon fall rather than sliding smoothly like a siren.
+    const vib = a.osc('sine', 15, t);
+    const vibAmt = a.gain(freq * 0.06);
+    vib.connect(vibAmt);
+    vibAmt.connect(o.frequency);
+    vib.start(t);
+    vib.stop(t + 0.28);
+
+    const g = a.env(t, peak * 0.9, 0.005, 0.13);
+    const lp = a.filter('lowpass', freq * 5, 0.8);
+    o.connect(lp);
+    lp.connect(g);
+    g.connect(a.sfxBus);
+    a.send(g, 0.26);
+    o.start(t);
+    o.stop(t + 0.3);
+
+    // The puff. Swept downward so it settles rather than hisses, and quiet
+    // enough that a crowd being cleared doesn't turn into white noise.
+    const n = a.noise();
+    const bp = a.filter('bandpass', 1400, 0.9);
+    bp.frequency.exponentialRampToValueAtTime(380, t + 0.16);
+    const ng = a.env(t, peak * 0.4, 0.006, 0.11);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(a.sfxBus);
+    a.send(ng, 0.3);
+    n.start(t);
+    n.stop(t + 0.3);
+  }
+
+  /**
+   * A citizen spotting the ball: the two-note upward "whoop" with a little
+   * vibrato — cartoon surprise rather than distress, since the whole point is
+   * that this is cheerful.
+   *
+   * This *was* the pickup sound for citizens, and it turned out to be a much
+   * better reaction than a result: an upward whoop is the noise a person makes
+   * when they see something coming, not when they vanish. Moving it here and
+   * giving `popHuman` a falling yelp instead means the encounter now reads as
+   * two halves that answer each other.
+   *
+   * `pitch` comes from the character variant, so a given citizen always has the
+   * same voice — a crowd of identical yelps sounds like one person in a hall of
+   * mirrors.
+   */
+  startle(pitch = 1) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+
+    // A whole street reacting at once is a wall of noise, not a reaction. Three
+    // voices is enough to read as a crowd; the rest are dropped silently.
+    if (t - this.lastStartle < 0.11) {
+      if (++this.startlesThisBurst > 2) return;
+    } else {
+      this.startlesThisBurst = 0;
+    }
+    this.lastStartle = t;
+
+    const base = 520 * pitch;
+
+    const o = a.osc('triangle', base, t);
+    o.frequency.setValueAtTime(base * 0.7, t);
+    o.frequency.exponentialRampToValueAtTime(base * 1.5, t + 0.09);
+    o.frequency.exponentialRampToValueAtTime(base * 1.32, t + 0.2);
 
     const vib = a.osc('sine', 11, t);
-    const vibAmt = a.gain(freq * 0.045);
+    const vibAmt = a.gain(base * 0.045);
     vib.connect(vibAmt);
     vibAmt.connect(o.frequency);
     vib.start(t);
     vib.stop(t + 0.32);
 
-    const g = a.env(t, peak * 0.95, 0.006, 0.2);
+    const g = a.env(t, 0.19, 0.006, 0.2);
     o.connect(g);
     g.connect(a.sfxBus);
     a.send(g, 0.24);
     o.start(t);
     o.stop(t + 0.35);
+
+    // A breath in front of the tone. Tiny, and the one thing added over the old
+    // pickup version: it gives the whoop an onset, which is what makes it land
+    // as a reaction to something rather than a note.
+    const n = a.noise();
+    const nf = a.filter('highpass', 1800, 0.8);
+    const ng = a.env(t, 0.045, 0.004, 0.04);
+    n.connect(nf);
+    nf.connect(ng);
+    ng.connect(a.sfxBus);
+    n.start(t);
+    n.stop(t + 0.16);
   }
 
   /** Bounce off something too big. Dull, low, no sting — never a punishment. */
@@ -242,12 +343,31 @@ class Sfx {
     }
   }
 
-  /** Collectible pickup: bright, coin-like, unmistakably different. */
+  /**
+   * Collectible pickup: bright, coin-like, unmistakably different.
+   *
+   * A run of them climbs. This is the one place a pitch ladder belongs — the
+   * thing that was stripped out of the ordinary pickup for sounding like a slot
+   * machine. The difference is duration: that ladder ran for a whole level and
+   * became the texture of the game, while this one lasts as long as it takes to
+   * roll through a taper of cones and resets half a second later. A rising run
+   * is exactly what makes clearing a cluster in one pass feel like a payoff
+   * rather than six copies of the same noise stacked on one frame.
+   *
+   * `index` is the set, so the two collections start from different notes and
+   * you can hear *which* one you just grabbed without looking at the cards.
+   */
   collect(index: number) {
     const a = audio;
     if (!a.ready) return;
     const t = a.now;
-    const base = semi(12 + (index % 6) * 2);
+
+    if (t - this.lastCollect < 0.5) this.collectRun = Math.min(this.collectRun + 1, 7);
+    else this.collectRun = 0;
+    this.lastCollect = t;
+
+    // Whole tones, so a long run stays consonant however far up it gets.
+    const base = semi(12 + (index % 2) * 3 + this.collectRun * 2);
 
     // Two detuned sines = the classic coin beat.
     for (const [mult, detune] of [
@@ -387,6 +507,198 @@ class Sfx {
     a.send(g, 0.25);
     o.start(t);
     o.stop(t + 0.25);
+  }
+
+  // ── meta-progression ────────────────────────────────────────────────────
+  //
+  // These belong to the screens between runs, and they are pitched a little
+  // sweeter and longer than the in-game set on purpose: nothing is competing
+  // with them for attention, and a reward that sounds like a pickup does not
+  // feel like a reward.
+
+  /** An upgrade card dealing itself onto the table. `index` staggers the pitch. */
+  reveal(index: number) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    // Airy swish plus a soft mallet, so three cards in sequence read as three
+    // objects landing rather than one sound repeated.
+    const n = a.noise();
+    const f = a.filter('bandpass', 900 + index * 260, 2.2);
+    f.frequency.exponentialRampToValueAtTime(2600 + index * 400, t + 0.13);
+    const ng = a.env(t, 0.07, 0.008, 0.09);
+    n.connect(f);
+    f.connect(ng);
+    ng.connect(a.sfxBus);
+    a.send(ng, 0.25);
+    n.start(t);
+    n.stop(t + 0.3);
+
+    const o = a.osc('triangle', semi(14 + index * 3), t);
+    const g = a.env(t, 0.1, 0.004, 0.16);
+    o.connect(g);
+    g.connect(a.sfxBus);
+    a.send(g, 0.35);
+    o.start(t);
+    o.stop(t + 0.4);
+  }
+
+  /** An upgrade taken. Warm, affirming, and clearly a *keep* rather than a tick. */
+  choose() {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    // Rising fifth into an octave: the shortest phrase that sounds like "yes".
+    [
+      [0, 0],
+      [7, 0.07],
+      [12, 0.14],
+    ].forEach(([iv, delay]) => {
+      const at = t + delay;
+      const o = a.osc('triangle', semi(12 + iv), at);
+      const g = a.env(at, 0.16, 0.005, 0.34);
+      const lp = a.filter('lowpass', 5200, 0.8);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.45);
+      o.start(at);
+      o.stop(at + 0.8);
+    });
+
+    const sub = a.osc('sine', 150, t);
+    sub.frequency.exponentialRampToValueAtTime(70, t + 0.2);
+    const sg = a.env(t, 0.28, 0.004, 0.24);
+    sub.connect(sg);
+    sg.connect(a.sfxBus);
+    sub.start(t);
+    sub.stop(t + 0.6);
+  }
+
+  /**
+   * One coin landing on a pile. Called dozens of times during the gold count,
+   * so it is deliberately tiny — the pitch drift is what turns a stream of them
+   * into a shower rather than a buzz.
+   */
+  coin(pitch = 1) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    const base = 1180 * pitch * (0.94 + Math.random() * 0.12);
+    for (const [mult, amp] of [
+      [1, 0.075],
+      [1.5, 0.045],
+    ] as const) {
+      const o = a.osc('sine', base * mult, t);
+      const g = a.env(t, amp, 0.001, 0.07);
+      o.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.3);
+      o.start(t);
+      o.stop(t + 0.2);
+    }
+  }
+
+  /** Player level gained. The biggest sound in the game after a tier-up. */
+  levelUp() {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+
+    // Ascending arpeggio, then the chord it was climbing toward.
+    [0, 4, 7, 12].forEach((iv, i) => {
+      const at = t + i * 0.065;
+      const o = a.osc('triangle', semi(12 + iv), at);
+      const g = a.env(at, 0.15, 0.004, 0.22);
+      o.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.4);
+      o.start(at);
+      o.stop(at + 0.5);
+    });
+
+    const hit = t + 0.28;
+    [0, 7, 12, 16, 19].forEach((iv, i) => {
+      const o = a.osc(i < 2 ? 'triangle' : 'sine', semi(12 + iv), hit);
+      const g = a.env(hit + i * 0.012, 0.14 / (1 + i * 0.4), 0.008, 1.0);
+      const lp = a.filter('lowpass', 6000, 0.7);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.55);
+      o.start(hit);
+      o.stop(hit + 1.8);
+    });
+  }
+
+  /** Something bought in the shop. A till, essentially. */
+  purchase() {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    this.coin(1.15);
+    [
+      [16, 0.05],
+      [23, 0.12],
+    ].forEach(([iv, delay]) => {
+      const at = t + delay;
+      const o = a.osc('sine', semi(iv), at);
+      const g = a.env(at, 0.14, 0.003, 0.3);
+      o.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.5);
+      o.start(at);
+      o.stop(at + 0.7);
+    });
+  }
+
+  /** A skin put on. Short, physical, no melody — it is not an achievement. */
+  equip() {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    const n = a.noise();
+    const f = a.filter('bandpass', 2400, 3);
+    f.frequency.exponentialRampToValueAtTime(700, t + 0.1);
+    const g = a.env(t, 0.09, 0.002, 0.07);
+    n.connect(f);
+    f.connect(g);
+    g.connect(a.sfxBus);
+    a.send(g, 0.2);
+    n.start(t);
+    n.stop(t + 0.25);
+
+    const o = a.osc('sine', 300, t);
+    o.frequency.exponentialRampToValueAtTime(520, t + 0.06);
+    const og = a.env(t, 0.1, 0.002, 0.09);
+    o.connect(og);
+    og.connect(a.sfxBus);
+    o.start(t);
+    o.stop(t + 0.3);
+  }
+
+  /**
+   * Can't afford it, or not unlocked yet. A soft two-note fall — informative,
+   * never a buzzer. Being told "no" in a relaxing game should not sting.
+   */
+  denied() {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    [
+      [0, 0],
+      [-3, 0.09],
+    ].forEach(([iv, delay]) => {
+      const at = t + delay;
+      const o = a.osc('sine', semi(7 + iv), at);
+      const g = a.env(at, 0.1, 0.004, 0.13);
+      const lp = a.filter('lowpass', 1800, 0.9);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(a.sfxBus);
+      o.start(at);
+      o.stop(at + 0.4);
+    });
   }
 
   /** Car horn when the ball blocks traffic. Sells the city as inhabited. */

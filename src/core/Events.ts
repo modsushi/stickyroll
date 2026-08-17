@@ -20,6 +20,15 @@ export interface GameEvents {
   comboChange: { combo: number; best: number };
   scoreChange: { score: number; delta: number };
   timeUp: void;
+  /**
+   * The run reached its halfway mark and the player is owed an upgrade pick.
+   * Fired once per run; the screen flow pauses the game and shows the draft.
+   */
+  rewardOffer: void;
+  /** A permanent upgrade was taken, so anything showing perks should refresh. */
+  upgradeTaken: { id: string; rank: number };
+  /** Gold balance changed — spent, earned or claimed. */
+  goldChange: { gold: number; delta: number };
   /** Level ended; payload feeds the results screen. */
   levelEnd: {
     score: number;
@@ -28,6 +37,10 @@ export interface GameEvents {
     absorbed: number;
     tier: number;
     collected: { kind: string; label: string; count: number; target: number }[];
+    /** Gold this run is worth, waiting to be claimed on the results screen. */
+    gold: number;
+    /** Experience already banked; the results screen only animates it. */
+    xp: number;
   };
   /** Someone asked to pause (HUD button, tab hidden). A request, not a fact. */
   pauseRequest: void;

@@ -13,6 +13,25 @@ import { clamp01, damp, elasticOut, lerp, smoothstep } from '../core/Math';
 
 const YAW = -Math.PI * 0.25; // fixed compass heading, matches the reference art
 
+/**
+ * Phones get a looser frame than desktops.
+ *
+ * The framing below is one set of numbers for a screen of any size, and on a
+ * 6-inch portrait display that reads as tight: the ball fills the middle and
+ * you can see barely a block in any direction, so you steer into things you
+ * never had a chance to notice. A phone also holds the *short* axis vertically,
+ * so the same vertical FOV shows far less ground than the same numbers do on a
+ * landscape monitor.
+ *
+ * Pulling back and widening slightly restores roughly the desktop field of view
+ * without changing the diorama look — the pitch is untouched, so it is the same
+ * picture seen from a little further away.
+ */
+const MOBILE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const EASE_DIST = MOBILE ? 1.16 : 1;
+const EASE_HEIGHT = MOBILE ? 1.1 : 1;
+const EASE_FOV = MOBILE ? 4.5 : 0;
+
 export class FollowCamera {
   /** Point the camera is actually looking at; lags the ball for weight. */
   private focus = new Vector3();
@@ -46,9 +65,9 @@ export class FollowCamera {
     const t = clamp01((radius - 0.4) / 5.4);
     const e = smoothstep(t);
     return {
-      dist: lerp(11, 30, e) + radius * 1.35,
-      height: lerp(17, 46, e) + radius * 1.6,
-      fov: lerp(30, 34, t),
+      dist: (lerp(11, 30, e) + radius * 1.35) * EASE_DIST,
+      height: (lerp(17, 46, e) + radius * 1.6) * EASE_HEIGHT,
+      fov: lerp(30, 34, t) + EASE_FOV,
     };
   }
 

@@ -686,10 +686,19 @@ export class CityBuilder {
         // Only the cluster's *centre* is guaranteed to be on an allowed tile;
         // items sit up to ~3 m out, which is most of a tile. Without a per-item
         // check, cafe chairs end up in the carriageway and bins inside shops.
+        //
+        // But the check cannot be `canPlaceAt` alone. That rule is about *loose
+        // furniture*, and it excludes roads outright — so a cluster that
+        // explicitly declares `on: ['#']` had every single item rejected for
+        // standing where it asked to stand. `roadworks` was authored to sit on
+        // the carriageway and instead survived only where the centre's jitter
+        // happened to fling an item onto the pavement: 3 barriers out of a
+        // possible 40. A cluster's own `on` list is a statement of intent and
+        // has to outrank the generic rule.
         for (const item of defs) {
           const ix = cx + item.x * cos + item.z * sin;
           const iz = cz - item.x * sin + item.z * cos;
-          if (!this.canPlaceAt(ix, iz)) continue;
+          if (!on.has(this.tileAtWorld(ix, iz)) && !this.canPlaceAt(ix, iz)) continue;
           out.push({
             def: prop(item.prop),
             x: ix,

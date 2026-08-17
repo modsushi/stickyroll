@@ -627,7 +627,10 @@ html.no-ui #ui {
   padding: max(24px, var(--safe-t)) 24px max(24px, var(--safe-b));
   background: radial-gradient(120% 90% at 50% 18%, rgba(198, 224, 236, 0.95), rgba(74, 130, 163, 0.97));
   pointer-events: auto;
-  z-index: 50;
+  /* Above #boot (100), not below it. The boot screen is a menu now — it opens
+     the shop and the daily rewards — and at z-index 50 those panels opened
+     silently *underneath* it, which looks exactly like a dead button. */
+  z-index: 120;
   overflow-y: auto;
   animation: fadeIn 0.28s ease both;
 }
@@ -850,6 +853,593 @@ html.no-ui #ui {
   box-shadow: 0 2px 0 var(--sun-deep);
 }
 
+/* ── meta: purse, coins, shared bits ───────────────────────────────────── */
+
+/* Level + gold, shown on the boot and pause screens. One strip rather than two
+   badges: these two numbers are read together, and splitting them across the
+   screen makes the player hunt for the second one. */
+.purse {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.4em 1em;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(43, 95, 125, 0.32));
+  border: 2px solid rgba(255, 210, 63, 0.55);
+  font-size: clamp(11px, 2.9vw, 15px);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.purse .lv {
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  border-radius: 999px;
+  padding: 0.16em 0.7em;
+  box-shadow: 0 2px 0 var(--sun-deep);
+}
+.purse .ti {
+  opacity: 0.85;
+  font-size: 0.86em;
+  letter-spacing: 0.1em;
+}
+.purse .g {
+  color: var(--sun);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Owned perks, on the pause screen. */
+.perk-strip {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(92vw, 520px);
+}
+.perk-strip .none {
+  font-size: clamp(9px, 2.4vw, 11px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.perk-strip .perk {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px 3px 5px;
+  border-radius: 999px;
+  background: rgba(20, 48, 66, 0.34);
+  border: 2px solid rgba(255, 210, 63, 0.4);
+  cursor: help;
+}
+.perk-strip .ic {
+  font-size: clamp(13px, 3.2vw, 16px);
+  line-height: 1;
+}
+.perk-strip .r {
+  font-size: clamp(9px, 2.3vw, 11px);
+  color: var(--sun);
+  letter-spacing: 0.06em;
+}
+
+.gold-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.34em 0.95em;
+  border-radius: 999px;
+  background: rgba(20, 48, 66, 0.35);
+  border: 2px solid rgba(255, 210, 63, 0.5);
+  font-size: clamp(13px, 3.4vw, 18px);
+}
+.gold-pill .v {
+  color: var(--sun);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The coin glyph is a bullet dressed up — a real coin emoji renders as a
+   different picture on every platform, and half of them are grey. */
+.coin,
+.d-coin {
+  color: var(--sun);
+  text-shadow: 0 2px 0 var(--sun-deep), 0 0 10px rgba(255, 210, 63, 0.55);
+}
+
+/* Coins thrown out of a claim button. Positioned absolutely at the burst point
+   by JS; everything else is one keyframe. */
+.coin-fly {
+  position: fixed;
+  z-index: 60;
+  font-size: clamp(14px, 3.6vw, 20px);
+  color: var(--sun);
+  text-shadow: 0 2px 0 var(--sun-deep), 0 0 12px rgba(255, 210, 63, 0.8);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: coinFly 1s var(--ease-out) var(--d, 0ms) both;
+}
+@keyframes coinFly {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+  18% { transform: translate(calc(-50% + var(--dx) * 0.45), calc(-50% + var(--dy) * 0.7)) scale(1.15); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) * -0.35)) scale(0.7); opacity: 0; }
+}
+
+/* A button that wants attention — the Rewards button with a claim waiting. */
+.btn.nudge {
+  animation: nudge 1.6s ease-in-out infinite;
+  position: relative;
+}
+.btn.nudge::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff5c5c;
+  border: 2px solid #fff;
+  box-shadow: 0 0 10px rgba(255, 92, 92, 0.9);
+}
+@keyframes nudge {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(-4px); }
+}
+
+.boot-menu {
+  margin-top: -8px;
+}
+
+#boot .purse {
+  margin-bottom: 4px;
+}
+
+/* ── results: xp bar and gold claim ────────────────────────────────────── */
+
+.xp-wrap {
+  width: min(88vw, 460px);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.35s var(--ease-out), transform 0.35s var(--ease-out);
+}
+.xp-wrap.on {
+  opacity: 1;
+  transform: none;
+}
+.xp-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: clamp(10px, 2.6vw, 13px);
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+.xp-label .lv {
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  border-radius: 999px;
+  padding: 0.14em 0.66em;
+  box-shadow: 0 2px 0 var(--sun-deep);
+}
+.xp-label .ti {
+  opacity: 0.85;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+.xp-label .nx {
+  margin-left: auto;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.xp-track {
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(20, 48, 66, 0.42);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+}
+.xp-track > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #9be7ff, #ffe37a, var(--sun));
+  box-shadow: 0 0 14px rgba(255, 210, 63, 0.7);
+}
+.xp-gain {
+  margin-top: 5px;
+  text-align: right;
+  font-size: clamp(10px, 2.6vw, 13px);
+  color: var(--sun);
+  letter-spacing: 0.1em;
+}
+.xp-wrap.maxed .xp-track > i {
+  background: linear-gradient(90deg, #ffe37a, #fff, var(--sun));
+}
+/* The level-up flash. Deliberately on the whole bar rather than a separate
+   banner: the thing that changed is the bar, so that is what should react. */
+.xp-wrap.levelled .xp-track {
+  animation: xpLevel 0.7s var(--ease-pop);
+}
+@keyframes xpLevel {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(255, 210, 63, 0); }
+  35% { transform: scale(1.06); box-shadow: 0 0 30px rgba(255, 210, 63, 0.95); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(255, 210, 63, 0); }
+}
+
+.gold-wrap {
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.3s var(--ease-pop), transform 0.3s var(--ease-pop);
+}
+.gold-wrap.on {
+  opacity: 1;
+  transform: none;
+}
+.btn.claim {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: clamp(16px, 4.2vw, 24px);
+  animation: claimPulse 1.3s ease-in-out infinite;
+}
+.btn.claim .coin {
+  color: #7a4a02;
+  text-shadow: none;
+}
+.btn.claim.done {
+  animation: none;
+  opacity: 0.9;
+}
+@keyframes claimPulse {
+  0%, 100% { transform: none; }
+  50% { transform: scale(1.045); }
+}
+
+/* ── mid-run upgrade draft ─────────────────────────────────────────────── */
+
+.draft-grid {
+  display: flex;
+  gap: clamp(8px, 2.2vw, 16px);
+  flex-wrap: wrap;
+  justify-content: center;
+  width: min(96vw, 720px);
+}
+
+.draft-card {
+  pointer-events: auto;
+  cursor: pointer;
+  flex: 1 1 clamp(150px, 28vw, 210px);
+  max-width: 230px;
+  padding: clamp(12px, 3vw, 18px) 12px clamp(10px, 2.4vw, 14px);
+  border-radius: 20px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+  background: linear-gradient(180deg, #bce0f0 0%, var(--sky) 55%, var(--sky-deep) 100%);
+  border: 3px solid var(--sun);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 6px 0 rgba(28, 111, 156, 0.55),
+    0 12px 26px rgba(0, 0, 0, 0.4);
+  /* Dealt in by JS adding `.in`; starts face-down and off the bottom. */
+  opacity: 0;
+  transform: translateY(46px) rotateX(58deg) scale(0.9);
+  transition:
+    opacity 0.34s var(--ease-out),
+    transform 0.44s var(--ease-pop);
+}
+.draft-card.in {
+  opacity: 1;
+  transform: none;
+}
+.draft-card:active {
+  transform: translateY(3px) scale(0.99);
+}
+@media (hover: hover) {
+  .draft-card.in:hover {
+    transform: translateY(-6px) scale(1.03);
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.45),
+      0 10px 0 rgba(28, 111, 156, 0.55),
+      0 18px 34px rgba(0, 0, 0, 0.45);
+  }
+}
+.draft-card.taken {
+  transform: scale(var(--pop, 1.05));
+  border-color: #fff3c4;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.5),
+    0 0 0 4px rgba(255, 210, 63, 0.4),
+    0 0 44px rgba(255, 210, 63, 0.75),
+    0 12px 26px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.draft-card.dropped {
+  opacity: 0.22;
+  transform: translateY(24px) scale(0.88);
+  pointer-events: none;
+}
+
+.dc-icon {
+  font-size: clamp(30px, 8vw, 44px);
+  line-height: 1.1;
+  filter: drop-shadow(0 3px 0 rgba(28, 111, 156, 0.45));
+}
+.dc-name {
+  font-size: clamp(14px, 3.6vw, 19px);
+  color: var(--sun);
+  text-shadow: 0 2px 0 #a35d05;
+}
+.dc-blurb {
+  font-size: clamp(10px, 2.6vw, 12.5px);
+  line-height: 1.45;
+  opacity: 0.92;
+  min-height: 2.9em;
+}
+.dc-delta {
+  font-size: clamp(11px, 2.8vw, 14px);
+  color: #fff3c4;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+.dc-pips {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+}
+.dc-pips .p {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(20, 48, 66, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  transition: all 0.3s var(--ease-pop);
+}
+.dc-pips .p.on {
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  border-color: #fff3c4;
+  box-shadow: 0 0 12px rgba(255, 210, 63, 0.85);
+}
+/* The rank about to be earned: outlined and breathing, so the card shows what
+   it gives you rather than only what you already have. */
+.dc-pips .p.next {
+  border-color: var(--sun);
+  animation: pipNext 1.2s ease-in-out infinite;
+}
+@keyframes pipNext {
+  0%, 100% { box-shadow: 0 0 0 rgba(255, 210, 63, 0); }
+  50% { box-shadow: 0 0 14px rgba(255, 210, 63, 0.9); }
+}
+.dc-take {
+  margin-top: 2px;
+  font-size: clamp(9px, 2.3vw, 11px);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.draft-foot {
+  font-size: clamp(10px, 2.6vw, 12px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* ── shop ──────────────────────────────────────────────────────────────── */
+
+.shop-head {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 3vw, 20px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(84px, 22vw, 116px), 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: clamp(8px, 2.2vw, 14px);
+  width: min(94vw, 720px);
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.skin-tile {
+  pointer-events: auto;
+  cursor: pointer;
+  position: relative;
+  border-radius: 16px;
+  padding: 6px 6px 4px;
+  display: grid;
+  justify-items: center;
+  /* The tile's wash is the skin's own two colours, so the grid reads as a
+     palette even before the 3D renders are looked at properly. */
+  background:
+    radial-gradient(120% 100% at 50% 0%, var(--a), var(--b));
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 0 rgba(28, 111, 156, 0.4);
+  transition: transform 0.18s var(--ease-pop), border-color 0.18s ease;
+}
+.skin-tile .st-art {
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+}
+.skin-tile .st-name {
+  font-size: clamp(9px, 2.3vw, 11px);
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.skin-tile .st-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: clamp(8px, 2.1vw, 10px);
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(14, 36, 50, 0.78);
+  color: #fff;
+}
+.skin-tile .st-badge.cost {
+  color: var(--sun);
+}
+.skin-tile .st-badge.cost::before {
+  content: '● ';
+}
+.skin-tile .st-badge.on {
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  color: var(--ink);
+}
+.skin-tile .st-badge.lock::before {
+  content: '🔒 ';
+}
+/* Locked skins keep their colour. Greying them out was the obvious thing and it
+   was wrong: a locked item is the shop's *advertisement*, and desaturating the
+   only picture of it removes the reason to reach the level. A slight dim plus
+   the padlock badge says "not yet" without hiding the goods. */
+.skin-tile.locked .st-art {
+  filter: brightness(0.86) saturate(0.94);
+}
+.skin-tile.locked {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.skin-tile.sel {
+  border-color: var(--sun);
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 6px 0 rgba(28, 111, 156, 0.45), 0 0 22px rgba(255, 210, 63, 0.55);
+}
+.skin-tile.bought {
+  animation: bought 0.7s var(--ease-pop);
+}
+@keyframes bought {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(255, 210, 63, 0); }
+  40% { transform: scale(1.18) rotate(-3deg); box-shadow: 0 0 40px rgba(255, 210, 63, 1); }
+  100% { transform: translateY(-3px) scale(1.04); }
+}
+
+.shop-detail {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 3vw, 20px);
+  flex-wrap: wrap;
+  justify-content: center;
+  width: min(94vw, 720px);
+  padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 18px);
+  border-radius: 18px;
+  background: rgba(20, 48, 66, 0.32);
+  border: 2px solid rgba(255, 255, 255, 0.28);
+}
+.sd-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.sd-name {
+  font-size: clamp(15px, 4vw, 21px);
+  color: var(--sun);
+  text-shadow: 0 2px 0 #a35d05;
+}
+.sd-blurb {
+  font-size: clamp(10px, 2.6vw, 13px);
+  line-height: 1.5;
+  opacity: 0.86;
+}
+.sd-blurb.warn {
+  color: #ffd0d0;
+  opacity: 1;
+}
+
+/* ── daily rewards ─────────────────────────────────────────────────────── */
+
+.daily-row {
+  display: flex;
+  gap: clamp(5px, 1.6vw, 10px);
+  flex-wrap: wrap;
+  justify-content: center;
+  width: min(96vw, 700px);
+}
+
+.day {
+  position: relative;
+  flex: 1 1 clamp(64px, 12vw, 88px);
+  max-width: 96px;
+  padding: 8px 4px 9px;
+  border-radius: 14px;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(43, 95, 125, 0.42));
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  transform: translateY(18px) scale(0.9);
+  transition: opacity 0.3s var(--ease-out), transform 0.34s var(--ease-pop);
+}
+.day.in {
+  opacity: 1;
+  transform: none;
+}
+.day .d-n {
+  font-size: clamp(8px, 2.1vw, 10px);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.day .d-coin {
+  font-size: clamp(15px, 4vw, 21px);
+  line-height: 1.2;
+}
+.day .d-v {
+  font-size: clamp(11px, 2.9vw, 14px);
+  color: var(--sun);
+  font-variant-numeric: tabular-nums;
+}
+.day .d-tick {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(24px, 6vw, 34px);
+  color: #7bf07b;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  background: rgba(12, 32, 44, 0.55);
+  border-radius: 12px;
+}
+.day.done {
+  opacity: 0.75;
+}
+/* Day 7 is the reason to keep coming back, so it is the only card in gold —
+   visible as the prize from day 1 without disturbing the row's rhythm. */
+.day.big {
+  border-color: rgba(255, 210, 63, 0.7);
+  background: linear-gradient(180deg, rgba(255, 227, 122, 0.3), rgba(240, 149, 42, 0.35));
+}
+.day.today {
+  border-color: var(--sun);
+  box-shadow: 0 0 0 3px rgba(255, 210, 63, 0.3), 0 0 26px rgba(255, 210, 63, 0.6);
+  animation: todayPulse 1.5s ease-in-out infinite;
+}
+@keyframes todayPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+.day.claimed {
+  animation: claimed 0.7s var(--ease-pop) forwards;
+}
+@keyframes claimed {
+  0% { transform: scale(1.06); }
+  35% { transform: scale(1.3) rotate(-4deg); box-shadow: 0 0 46px rgba(255, 210, 63, 1); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(255, 210, 63, 0); }
+}
+
 /* perf hud */
 #perf {
   top: 50%;
@@ -906,6 +1496,23 @@ html.no-ui #ui {
   }
   .gallery {
     max-height: 44vh;
+  }
+  /* A short landscape window has no room for a tall grid plus a detail bar plus
+     two buttons, and the detail bar is the part that must stay reachable. */
+  .shop-grid {
+    max-height: 34vh;
+  }
+  .draft-card {
+    /* Squeezed rather than wrapped: three cards side by side is the whole read
+       of a draft, and wrapping one onto a second row breaks the comparison. */
+    flex: 1 1 clamp(130px, 22vw, 180px);
+    padding: 10px 10px 8px;
+  }
+  .dc-blurb {
+    min-height: 0;
+  }
+  .day {
+    flex: 1 1 clamp(56px, 9vw, 78px);
   }
 }
 

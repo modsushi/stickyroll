@@ -9,15 +9,16 @@
  */
 
 import {
-  Color,
   Group,
   IcosahedronGeometry,
+  type Material,
   Mesh,
   Quaternion,
   Vector3,
 } from 'three';
-import { type LitMaterial, makeLit } from '../render/litMaterial';
 import { clamp01, damp, elasticOut, lerp } from '../core/Math';
+import { equippedSkin, type SkinDef } from '../meta/Skins';
+import { perks } from '../meta/Upgrades';
 import { Growth } from './Growth';
 
 export class Ball {
@@ -42,7 +43,8 @@ export class Ball {
   visualRadius = this.growth.radius;
 
   private core: Mesh;
-  private coreMat: LitMaterial;
+  private coreMat: Material;
+  private skinId = '';
   private spin = new Quaternion();
   private axis = new Vector3();
   private squash = 0;
@@ -59,12 +61,9 @@ export class Ball {
     // perfectly smooth surface.
     const geo = new IcosahedronGeometry(1, 2);
     geo.computeVertexNormals();
-    this.coreMat = makeLit({
-      color: new Color(0xf6f4ef),
-      roughness: 0.55,
-      metalness: 0.02,
-      flatShading: true,
-    });
+    const skin = equippedSkin();
+    this.coreMat = skin.build();
+    this.skinId = skin.id;
     this.core = new Mesh(geo, this.coreMat);
     this.core.castShadow = true;
     this.core.receiveShadow = true;
@@ -74,17 +73,39 @@ export class Ball {
     this.group.position.copy(this.pos);
   }
 
+  /**
+   * Swaps the core material. Called when a skin is equipped in the shop, so the
+   * change is visible the moment the panel closes rather than next run — seeing
+   * what you just bought is most of what you paid for.
+   *
+   * The old material is disposed: each skin compiles its own program, and
+   * leaking one per equip would accumulate shaders for a whole browsing session.
+   */
+  setSkin(skin: SkinDef) {
+    if (skin.id === this.skinId) return;
+    this.coreMat.dispose();
+    this.coreMat = skin.build();
+    this.skinId = skin.id;
+    this.core.material = this.coreMat;
+  }
+
   get radius() {
     return this.growth.radius;
   }
 
-  /** Speed ceiling and grip both scale with size. */
-  private get maxSpeed() {
-    return 5.6 + this.growth.tier * 1.15;
+  /**
+   * Speed ceiling and grip both scale with size — and with the Greased Wheels
+   * upgrade, which multiplies *both* together. Raising the ceiling alone would
+   * make a fast ball feel floaty, because it would take proportionally longer
+   * to get there; scaling acceleration with it keeps the handling identical and
+   * simply makes the whole thing quicker.
+   */
+  get maxSpeed() {
+    return (5.6 + this.growth.tier * 1.15) * perks().speedMult;
   }
 
   private get accel() {
-    return 26 + this.growth.tier * 3.2;
+    return (26 + this.growth.tier * 3.2) * perks().speedMult;
   }
 
   /** @param dir world-space desired direction, length 0..1 */
@@ -199,8 +220,14 @@ export class Ball {
     this.core.scale.set(r * sx, r * sy, r * sx);
   }
 
-  reset() {
+  /**
+   * @param startMass mass granted by the Head Start upgrade. Applied before the
+   *   visual radius is synced, so the ball is drawn at its real size on frame
+   *   one instead of popping up from a pebble after the camera has settled.
+   */
+  reset(startMass = 0) {
     this.growth.reset();
+    if (startMass > 0) this.growth.add(startMass);
     this.pos.set(0, this.growth.radius, 0);
     this.vel.set(0, 0, 0);
     this.visualRadius = this.growth.radius;
