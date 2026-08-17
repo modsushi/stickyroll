@@ -196,6 +196,15 @@ bearing and easy to undo by accident:
   wrong colour), and dark samples are re-rolled against the atlas pixels, or
   every pile is black window glass.
 
+**Phones also get it in the hand.** `core/Haptics.ts` vibrates the device on a
+demolition and on nothing else — a run absorbs hundreds of props, and buzzing
+for each of them is a pager, not juice. Three platform facts shape that file:
+the Vibration API is duration-only (a harder hit can only be a *longer* pulse,
+so the pattern is three decaying pulses rather than one), **iOS implements none
+of it** so this is a no-op on iPhone whatever the setting says, and a second
+call replaces the first rather than queueing — hence the cooldown. There is a
+Vibration switch on the pause screen, shown only where the API actually exists.
+
 **Camera shake and punch are fractions of the framing, not metres.** `shake(0.5)`
 used to mean half a metre of camera wobble, which is a jolt at the opening
 framing (11 m out) and two pixels at tier 8 (38 m out, 55 m up) — so impacts

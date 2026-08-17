@@ -1,5 +1,6 @@
 import { sfx } from '../audio/Sfx';
 import { audio } from '../audio/AudioEngine';
+import { haptics } from '../core/Haptics';
 import { save } from '../core/Save';
 import { playerState } from '../meta/Progression';
 import { rankOf, UPGRADES } from '../meta/Upgrades';
@@ -27,6 +28,12 @@ export class Pause {
 
     const music = this.slider('Music', save.data.settings.music, (v) => audio.setMusicVolume(v));
     const sound = this.slider('Sound', save.data.settings.sfx, (v) => audio.setSfxVolume(v));
+    // Only offered where it can do something. On a desktop or an iPhone the
+    // Vibration API is absent, and a switch that provably does nothing is worse
+    // than no switch at all.
+    const buzz = haptics.supported
+      ? this.toggle('Vibration', haptics.enabled, (on) => (haptics.enabled = on))
+      : null;
 
     const resume = el('button', { class: 'btn' }, 'Resume');
     resume.addEventListener('click', () => {
@@ -71,10 +78,9 @@ export class Pause {
       style: 'font-size:10px;opacity:.45;letter-spacing:.08em;white-space:pre;text-align:center',
     });
 
-    this.root.append(
-      el('h1', {}, 'Paused'), this.purse, this.perkStrip,
-      music, sound, resume, row, this.diag
-    );
+    this.root.append(el('h1', {}, 'Paused'), this.purse, this.perkStrip, music, sound);
+    if (buzz) this.root.append(buzz);
+    this.root.append(resume, row, this.diag);
     parent.append(this.root);
   }
 
@@ -132,6 +138,31 @@ export class Pause {
     // Only click on release, or dragging the slider machine-guns the sound.
     input.addEventListener('change', () => sfx.click(true));
     wrap.append(el('span', {}, label), input);
+    return wrap;
+  }
+
+  /**
+   * A pill switch, laid out on the same row rhythm as the sliders.
+   *
+   * A checkbox would be less code and the wrong control: the panel is drawn in
+   * the game's own light palette and a UA checkbox follows the *system* theme,
+   * which is the exact trap documented on `.slider input` in the stylesheet.
+   */
+  private toggle(label: string, value: boolean, onChange: (on: boolean) => void) {
+    const wrap = el('label', { class: 'toggle' });
+    const sw = el('button', { class: 'sw', type: 'button' });
+    sw.setAttribute('aria-pressed', String(value));
+    sw.setAttribute('aria-label', label);
+    sw.append(el('span', { class: 'knob' }));
+    sw.addEventListener('click', () => {
+      const on = sw.getAttribute('aria-pressed') !== 'true';
+      sw.setAttribute('aria-pressed', String(on));
+      // `onChange` fires the confirming buzz when switching on, so the click is
+      // the quieter of the two sounds here.
+      sfx.click(true);
+      onChange(on);
+    });
+    wrap.append(el('span', {}, label), sw);
     return wrap;
   }
 

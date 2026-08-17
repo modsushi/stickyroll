@@ -39,7 +39,22 @@ export interface SaveData {
   collection: Record<string, number>;
   /** levelId -> best result. */
   levels: Record<string, { score: number; stars: number; bestCombo: number }>;
-  settings: { music: number; sfx: number; quality: 'auto' | 'low' | 'high' };
+  /** Level ids available from the level selector. */
+  unlockedLevels: string[];
+  /** One-time teaching cues already dismissed. */
+  tutorials: Record<string, boolean>;
+  settings: {
+    music: number;
+    sfx: number;
+    quality: 'auto' | 'low' | 'high';
+    /**
+     * Device vibration on a demolition. Stored for every platform, honoured
+     * only where the Vibration API exists (see `core/Haptics.ts`), so a save
+     * carried from a phone to a desktop keeps the preference rather than
+     * silently losing it.
+     */
+    haptics: boolean;
+  };
   totalAbsorbed: number;
   meta: MetaData;
 }
@@ -60,7 +75,9 @@ const fresh = (): SaveData => ({
   version: 2,
   collection: {},
   levels: {},
-  settings: { music: 0.7, sfx: 0.85, quality: 'auto' },
+  unlockedLevels: ['intro-01'],
+  tutorials: {},
+  settings: { music: 0.7, sfx: 0.85, quality: 'auto', haptics: true },
   totalAbsorbed: 0,
   meta: freshMeta(),
 });
@@ -77,13 +94,21 @@ function read(): SaveData {
 
     // v1 -> v2 is purely additive, so the migration is the same merge the
     // defensive path already does. Collection, best scores and settings all
-    // carry across untouched.
+    // carry across untouched, and a setting added later (haptics) picks up its
+    // default from `fresh()` for a save written before it existed — which is
+    // why new settings do not need a version bump, only additive ones.
     const base = fresh();
     return {
       ...base,
       ...parsed,
       version: 2,
       settings: { ...base.settings, ...parsed.settings },
+      // Existing players already had Downtown as their only option, so never
+      // make an update appear to take content away from them.
+      unlockedLevels: Array.isArray(parsed.unlockedLevels)
+        ? [...new Set(['intro-01', ...parsed.unlockedLevels])]
+        : ['intro-01', 'downtown-01'],
+      tutorials: { ...base.tutorials, ...parsed.tutorials },
       meta: { ...base.meta, ...parsed.meta, skins: dedupeSkins(parsed.meta?.skins) },
     };
   } catch {
@@ -154,6 +179,27 @@ class SaveStore {
 
   best(levelId: string) {
     return this.data.levels[levelId];
+  }
+
+  unlocked(levelId: string) {
+    return this.data.unlockedLevels.includes(levelId);
+  }
+
+  unlock(levelId: string) {
+    if (this.unlocked(levelId)) return false;
+    this.data.unlockedLevels.push(levelId);
+    this.flush();
+    return true;
+  }
+
+  sawTutorial(id: string) {
+    return Boolean(this.data.tutorials[id]);
+  }
+
+  completeTutorial(id: string) {
+    if (this.data.tutorials[id]) return;
+    this.data.tutorials[id] = true;
+    this.flush();
   }
 
   setSetting<K extends keyof SaveData['settings']>(k: K, v: SaveData['settings'][K]) {

@@ -60,6 +60,8 @@ export interface GameEvents {
   goldChange: { gold: number; delta: number };
   /** Level ended; payload feeds the results screen. */
   levelEnd: {
+    /** True when the level's clear objective was met before time expired. */
+    completed: boolean;
     score: number;
     stars: number;
     bestCombo: number;

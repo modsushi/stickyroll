@@ -7,11 +7,13 @@
  * usually already built.
  */
 
+import { Vector3 } from 'three';
 import { audio } from './audio/AudioEngine';
 import { music } from './audio/Music';
 import { sfx } from './audio/Sfx';
 import { assets } from './core/Assets';
 import { bus } from './core/Events';
+import { haptics } from './core/Haptics';
 import { Input } from './core/Input';
 import { Loop } from './core/Loop';
 import { save } from './core/Save';
@@ -31,6 +33,7 @@ import { DailyReward } from './ui/DailyReward';
 import { Hud } from './ui/Hud';
 import { Pause } from './ui/Pause';
 import { Results } from './ui/Results';
+import { LevelSelect } from './ui/LevelSelect';
 import { RewardPicker } from './ui/RewardPicker';
 import { Shop } from './ui/Shop';
 import { el } from './ui/dom';
@@ -56,6 +59,7 @@ const boot = new Boot(uiRoot);
 const hud = new Hud(uiRoot, game);
 const pause = new Pause(uiRoot);
 const results = new Results(uiRoot);
+const levels = new LevelSelect(uiRoot);
 const collection = new Collection(uiRoot, renderer);
 const shop = new Shop(uiRoot, renderer);
 const daily = new DailyReward(uiRoot);
@@ -145,6 +149,8 @@ bus.on('lockOff', (e) => game.demolitionRef()?.release(e.prop));
 bus.on('demolish', (e) => {
   game.demolitionRef()?.demolish(e.prop, e.impact, e.power, e.ballRadius);
   sfx.demolish(e.power);
+  // The third channel. Phones only, and only for this event — see Haptics.
+  haptics.demolish(e.power);
   // The hardest *shake* in the game — flattening a building is the one moment
   // that should physically jolt the picture — but only a token dolly. The
   // punch pulls the camera back, and pulling back is the last thing this
@@ -200,6 +206,10 @@ results.onRetry = () => {
   audio.duck(0);
   restart();
 };
+results.onLevels = () => {
+  results.hide();
+  levels.show();
+};
 results.onCollection = () => collection.show();
 results.onShop = () => shop.show();
 
@@ -244,10 +254,58 @@ function restart() {
   results.hide();
   pause.hide();
   game.begin();
+  paintCards();
   hud.reset();
   hud.show(true);
   game.start();
   music.setTier(0);
+  showMovementHint();
+}
+
+let bootHidden = false;
+async function beginLevel(level: typeof game.level) {
+  levels.hide();
+  if (DailyReward.pending) {
+    await daily.show();
+    boot.refresh();
+  }
+  if (!bootHidden) {
+    boot.hide();
+    bootHidden = true;
+  }
+  game.setLevel(level);
+  music.start();
+  restart();
+  bus.emit('ready', undefined as never);
+}
+
+const movementHint = el('div', { class: 'movement-hint off' });
+movementHint.append(el('span', { class: 'finger' }, '👇'), el('span', { class: 'hint-copy' }, 'Drag to roll!'));
+uiRoot.append(movementHint);
+let hintVisible = false;
+const hintPosition = new Vector3();
+function dismissMovementHint() {
+  if (!hintVisible) return;
+  hintVisible = false;
+  movementHint.classList.add('off');
+  save.completeTutorial('intro-finger-v1');
+}
+function showMovementHint() {
+  // Versioned separately from the earlier text-only prompt so players who
+  // already dismissed that less useful cue still receive the visual tutorial.
+  const shouldShow = game.level.id === 'intro-01' && !save.sawTutorial('intro-finger-v1');
+  hintVisible = shouldShow;
+  movementHint.classList.toggle('off', !shouldShow);
+}
+function updateMovementHint(speed: number) {
+  if (!hintVisible) return;
+  if (game.state === 'playing' && speed > 0.25) {
+    dismissMovementHint();
+    return;
+  }
+  hintPosition.copy(game.ball.pos).project(renderer.camera);
+  movementHint.style.left = `${(hintPosition.x * 0.5 + 0.5) * innerWidth}px`;
+  movementHint.style.top = `${(-hintPosition.y * 0.5 + 0.5) * innerHeight - 82}px`;
 }
 
 // ── frame ─────────────────────────────────────────────────────────────────
@@ -265,6 +323,7 @@ const loop = new Loop(
     if (game.state === 'playing') tickSkins(dt);
 
     const speed = Math.hypot(game.ball.vel.x, game.ball.vel.z);
+    updateMovementHint(speed);
     // Reads the ball's real ceiling, upgrades included, so the rolling loop
     // doesn't max out early on an upgraded ball.
     const maxSpeed = game.ball.maxSpeed;
@@ -446,20 +505,9 @@ const loop = new Loop(
 
   boot.onPlay = async () => {
     await unlock();
-    // Today's reward is offered on the way into the first run rather than on
-    // arrival: before Play there has been no gesture, so the claim would happen
-    // in silence. One extra tap, and it lands with its coin shower intact.
-    if (DailyReward.pending) {
-      await daily.show();
-      boot.refresh();
-    }
-    music.start();
-    music.setTier(0);
-    boot.hide();
-    hud.show(true);
-    game.start();
-    bus.emit('ready', undefined as never);
+    levels.show();
   };
+  levels.onSelect = (level) => void beginLevel(level);
 })().catch((err) => {
   console.error(err);
   boot.fail(String(err?.message ?? err));
@@ -467,7 +515,12 @@ const loop = new Loop(
 
 // Keep the audio graph honest across tab switches.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && game.state === 'playing') bus.emit('pauseRequest', undefined as never);
+  if (!document.hidden) return;
+  // A pattern outlives the page going away on some Android builds, so a
+  // building levelled the instant before a call comes in would otherwise keep
+  // buzzing in the background.
+  haptics.stop();
+  if (game.state === 'playing') bus.emit('pauseRequest', undefined as never);
 });
 
 collection.attachAssets(assets);

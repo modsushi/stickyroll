@@ -43,6 +43,7 @@ export class Results {
   private pendingGold = 0;
 
   onRetry: () => void = () => {};
+  onLevels: () => void = () => {};
   onCollection: () => void = () => {};
   onShop: () => void = () => {};
 
@@ -74,6 +75,11 @@ export class Results {
       sfx.click();
       this.onRetry();
     });
+    const levels = el('button', { class: 'btn ghost' }, 'Levels');
+    levels.addEventListener('click', () => {
+      sfx.click(true);
+      this.onLevels();
+    });
     const shop = el('button', { class: 'btn ghost' }, 'Shop');
     shop.addEventListener('click', () => {
       sfx.click(true);
@@ -84,7 +90,7 @@ export class Results {
       sfx.click(true);
       this.onCollection();
     });
-    this.actions.append(retry, shop, coll);
+    this.actions.append(retry, levels, shop, coll);
 
     this.root.append(
       this.title, this.starsEl, this.scoreEl, this.statsEl,
@@ -98,7 +104,9 @@ export class Results {
     const best = save.best(level.id);
 
     this.root.classList.remove('hidden');
-    this.title.textContent = e.score >= level.stars[2] ? 'Perfect Sweep!' : 'Time!';
+    this.title.textContent = e.completed
+      ? (e.score >= level.stars[2] ? 'Perfect Sweep!' : 'Level Complete!')
+      : 'Time!';
     this.scoreEl.textContent = '0';
     this.actions.style.opacity = '0';
     this.xpWrap.classList.remove('on');

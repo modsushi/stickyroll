@@ -139,6 +139,8 @@ export interface LevelDef {
   subtitle: string;
   /** Seconds. */
   time: number;
+  /** End as soon as every non-building prop is absorbed, rather than at time-up. */
+  clearToComplete?: boolean;
   /** Tile size in world units. Kenney road tiles are authored at 1×1. */
   tileSize: number;
   /** Rows of the map, top row is -Z. All rows must be the same length. */

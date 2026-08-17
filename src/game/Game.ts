@@ -10,8 +10,8 @@ import { assets } from '../core/Assets';
 import { bus } from '../core/Events';
 import { Input } from '../core/Input';
 import { save } from '../core/Save';
-import { PROPS, catalogModels, resolveProps, type KitId } from '../data/props';
-import { DOWNTOWN } from '../levels/downtown-01';
+import { PROPS, catalogModels, isBuilding, resolveProps, type KitId } from '../data/props';
+import { INTRO } from '../levels/intro-01';
 import type { LevelDef } from '../levels/types';
 import { goldFromScore, xpFromRun } from '../meta/Progression';
 import { perks } from '../meta/Upgrades';
@@ -41,7 +41,7 @@ export class Game {
   readonly score = new Score();
   readonly camera: FollowCamera;
 
-  level: LevelDef = DOWNTOWN;
+  level: LevelDef = INTRO;
   city!: BuiltCity;
   private baker!: BallBaker;
   private sticking!: Sticking;
@@ -82,6 +82,11 @@ export class Game {
     private input: Input
   ) {
     this.camera = new FollowCamera(renderer.camera);
+  }
+
+  /** Selects the definition to build on the next `begin()`. */
+  setLevel(level: LevelDef) {
+    this.level = level;
   }
 
   /** Loads every model the catalog and level need. */
@@ -240,7 +245,17 @@ export class Game {
       this.lastCountdown = secs;
       bus.emit('timeUp', undefined as never);
     }
-    if (this.timeLeft <= 0) this.end();
+    // Intro maps finish as soon as their clearable props are gone. Buildings
+    // are landmarks here: they deliberately do not turn a beginner level into
+    // a tier-seven demolition grind.
+    if (this.level.clearToComplete && this.city.props.all.every((p) => p.absorbed || isBuilding(p.def))) {
+      this.end(true);
+    } else if (this.timeLeft <= 0) {
+      // The intro is a welcoming tour rather than a pass/fail test. Its timer
+      // keeps the run brisk, but either clearing it or reaching time-up earns
+      // the completion and unlocks Downtown.
+      this.end(Boolean(this.level.clearToComplete));
+    }
   }
 
   /**
@@ -399,7 +414,7 @@ export class Game {
     this.collectibles?.render(dt);
   }
 
-  end() {
+  end(completed = false) {
     if (this.state === 'ended') return;
     this.state = 'ended';
     this.input.enabled = false;
@@ -414,6 +429,7 @@ export class Game {
 
     const stars = this.level.stars.reduce((n, t) => (this.score.score >= t ? n + 1 : n), 0);
     save.recordLevel(this.level.id, this.score.score, stars, this.score.bestCombo);
+    if (completed && this.level.id === 'intro-01') save.unlock('downtown-01');
 
     // XP is banked here rather than on the results screen: it is not a choice,
     // it cannot be declined, and a player who closes the tab during the count-up
@@ -424,6 +440,7 @@ export class Game {
     save.countRun();
 
     bus.emit('levelEnd', {
+      completed,
       score: this.score.score,
       stars,
       bestCombo: this.score.bestCombo,

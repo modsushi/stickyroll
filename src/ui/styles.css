@@ -730,6 +730,60 @@ html.no-ui #ui {
   justify-content: center;
 }
 
+.level-list {
+  display: grid;
+  gap: 12px;
+  width: min(88vw, 460px);
+}
+.level-card {
+  pointer-events: auto;
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 18px 20px;
+  text-align: left;
+  color: var(--white);
+  font: inherit;
+  border: 3px solid var(--gold);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #8bc3df, var(--sky-deep));
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.3), 0 5px 0 rgba(20, 53, 73, .38);
+}
+.level-card strong { font-size: clamp(18px, 5vw, 27px); color: var(--gold); }
+.level-card span { font-size: clamp(12px, 3vw, 15px); opacity: .95; }
+.level-card small { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; opacity: .72; }
+.level-card:disabled { cursor: default; filter: saturate(.25) brightness(.78); border-color: rgba(255,255,255,.45); }
+
+.movement-hint {
+  position: absolute;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: max-content;
+  padding: 7px 12px;
+  border-radius: 15px;
+  background: rgba(30, 75, 99, .9);
+  border: 2px solid var(--gold);
+  color: var(--white);
+  font-size: clamp(11px, 3vw, 14px);
+  text-align: center;
+  box-shadow: 0 5px 18px rgba(0,0,0,.26);
+  transition: opacity .25s ease, transform .25s ease;
+}
+.movement-hint.off { opacity: 0; transform: translateX(-50%) translateY(8px); }
+.movement-hint .finger {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: clamp(34px, 10vw, 52px);
+  line-height: .86;
+  filter: drop-shadow(0 3px 2px rgba(0,0,0,.35));
+  animation: pointBall .9s ease-in-out infinite alternate;
+}
+.movement-hint .hint-copy { white-space: nowrap; }
+@keyframes pointBall { from { transform: translateY(-5px); } to { transform: translateY(5px); } }
+
 /* collection gallery */
 .gallery {
   display: grid;
@@ -851,6 +905,49 @@ html.no-ui #ui {
   background: linear-gradient(180deg, #ffe37a, var(--sun));
   border: 2px solid #fff;
   box-shadow: 0 2px 0 var(--sun-deep);
+}
+
+/* Pill switch, for the settings that are on/off rather than a level. Drawn
+   from the same parts as the slider thumb and track — a UA checkbox would
+   follow the *system* colour scheme against this always-light panel, which is
+   the trap documented on `.slider input` above. */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: clamp(11px, 2.9vw, 14px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.toggle .sw {
+  pointer-events: auto;
+  position: relative;
+  width: 54px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: inset 0 1px 2px rgba(43, 95, 125, 0.3);
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+.toggle .sw[aria-pressed='true'] {
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+}
+.toggle .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 0 var(--sun-deep);
+  transition: transform 0.16s ease;
+}
+.toggle .sw[aria-pressed='true'] .knob {
+  transform: translateX(26px);
 }
 
 /* ── meta: purse, coins, shared bits ───────────────────────────────────── */
