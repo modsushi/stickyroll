@@ -24,6 +24,7 @@ export const KITS = {
   blocks: 'Essential_Isometric_3D_Block_Pack_Devilsworkshop_v2.0',
   food: 'kenney_food-kit',
   pets: 'kenney_cube-pets_1.0',
+  trains: 'kenney_train-kit',
 };
 
 /** Packs disagree on what they call the folder holding the .glb files. */

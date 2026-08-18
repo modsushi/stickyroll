@@ -26,7 +26,8 @@ export type KitId =
   | 'market'
   | 'blocks'
   | 'food'
-  | 'pets';
+  | 'pets'
+  | 'trains';
 
 /** Multiplier that brings each kit into metres. */
 export const KIT_SCALE: Record<KitId, number> = {
@@ -45,6 +46,9 @@ export const KIT_SCALE: Record<KitId, number> = {
   // keep snacks small and reserve the oversized treatment for finale food.
   food: 4.0,
   pets: 1.0,
+  // The train pack shares the car kit's toy-like proportions: locomotives are
+  // roughly 2.7 source units long and become 4.6 m city vehicles at this scale.
+  trains: 1.7,
   // Characters are normalised to a target height at load instead, because the
   // pack's raw units don't relate to the other kits at all.
   characters: 1.0,
@@ -72,6 +76,7 @@ export const KIT_MATERIAL: Record<KitId, 'atlas' | 'vertexColor'> = {
   blocks: 'vertexColor',
   food: 'atlas',
   pets: 'atlas',
+  trains: 'atlas',
   furniture: 'vertexColor',
 };
 
@@ -219,6 +224,20 @@ const SPECS: PropSpec[] = [
   { id: 'sign-highway', kit: 'roads', model: 'sign-highway', tier: 6, label: 'Road Sign', voice: 'metal' },
   { id: 'van', kit: 'cars', model: 'van', tier: 6, label: 'Van', voice: 'car' },
 
+  // ── Rail City · moving consists become the tier-eight victory lap ──────
+  // Trains are registered in the same spatial hash as traffic. Until the ball
+  // reaches its final size they are honest moving obstacles; afterwards every
+  // individual unit can be swept up and carried on the ball like a car.
+  { id: 'train-city-front', kit: 'trains', model: 'train-electric-city-a', tier: 8, label: 'Metro Cab', voice: 'car', absorbBias: 2.42, massBias: 0.8, pointsBias: 1.7 },
+  { id: 'train-city-car', kit: 'trains', model: 'train-electric-city-b', tier: 8, label: 'Metro Car', voice: 'car', absorbBias: 2.35, massBias: 0.8, pointsBias: 1.55 },
+  { id: 'train-city-rear', kit: 'trains', model: 'train-electric-city-c', tier: 8, label: 'Metro Tail', voice: 'car', absorbBias: 2.42, massBias: 0.8, pointsBias: 1.7 },
+  { id: 'train-tram', kit: 'trains', model: 'train-tram-modern', tier: 8, label: 'City Tram', voice: 'car', absorbBias: 2.45, massBias: 0.8, pointsBias: 1.8 },
+  { id: 'train-locomotive', kit: 'trains', model: 'train-locomotive-a', tier: 8, label: 'Locomotive', voice: 'car', absorbBias: 2.35, massBias: 0.85, pointsBias: 2.0 },
+  { id: 'train-container-blue', kit: 'trains', model: 'train-carriage-container-blue', tier: 8, label: 'Blue Freight Car', voice: 'car', absorbBias: 2.5, massBias: 0.8, pointsBias: 1.6 },
+  { id: 'train-container-red', kit: 'trains', model: 'train-carriage-container-red', tier: 8, label: 'Red Freight Car', voice: 'car', absorbBias: 2.5, massBias: 0.8, pointsBias: 1.6 },
+  { id: 'train-tank', kit: 'trains', model: 'train-carriage-tank-large', tier: 8, label: 'Tank Car', voice: 'car', absorbBias: 2.55, massBias: 0.8, pointsBias: 1.7 },
+  { id: 'train-lumber', kit: 'trains', model: 'train-carriage-lumber', tier: 8, label: 'Lumber Car', voice: 'car', absorbBias: 2.5, massBias: 0.8, pointsBias: 1.6 },
+
   // ── Breakable toy blocks ───────────────────────────────────────────────
   // These begin life stacked as scenery, then enter the normal prop hash once
   // they have tumbled to the ground. Tier 0 keeps the post-crumble reward
@@ -309,6 +328,22 @@ const SPECS: PropSpec[] = [
   // ── Tier 8 · the skyline ──────────────────────────────────────────────
   { id: 'shop-a', kit: 'commercial', model: 'building-a', tier: 8, label: 'Corner Shop', voice: 'building' },
   { id: 'shop-d', kit: 'commercial', model: 'building-d', tier: 8, label: 'Boutique', voice: 'building' },
+
+  // The city levels deliberately use many facade silhouettes. Keeping every
+  // one in the catalog means a visible in-map building can always be levelled;
+  // uncatalogued models are reserved for the unreachable skyline only.
+  { id: 'shop-b', kit: 'commercial', model: 'building-b', tier: 8, label: 'City Shop', voice: 'building' },
+  { id: 'shop-c', kit: 'commercial', model: 'building-c', tier: 8, label: 'Corner Store', voice: 'building' },
+  { id: 'shop-e', kit: 'commercial', model: 'building-e', tier: 8, label: 'Townhouse Shop', voice: 'building' },
+  { id: 'shop-h', kit: 'commercial', model: 'building-h', tier: 8, label: 'Arcade Shop', voice: 'building' },
+  { id: 'shop-wide-a', kit: 'commercial', model: 'low-detail-building-wide-a', tier: 8, label: 'Office Block', voice: 'building' },
+  { id: 'shop-wide-b', kit: 'commercial', model: 'low-detail-building-wide-b', tier: 8, label: 'Wide Store', voice: 'building' },
+  { id: 'house-c', kit: 'suburban', model: 'building-type-c', tier: 7, label: 'Blue House', voice: 'building' },
+  { id: 'house-e', kit: 'suburban', model: 'building-type-e', tier: 7, label: 'Garden Home', voice: 'building' },
+  { id: 'house-g', kit: 'suburban', model: 'building-type-g', tier: 7, label: 'Family Cottage', voice: 'building' },
+  { id: 'house-i', kit: 'suburban', model: 'building-type-i', tier: 7, label: 'City House', voice: 'building' },
+  { id: 'house-m', kit: 'suburban', model: 'building-type-m', tier: 7, label: 'Corner House', voice: 'building' },
+  { id: 'house-o', kit: 'suburban', model: 'building-type-o', tier: 7, label: 'Railway Home', voice: 'building' },
 ];
 
 export const PROP_SPECS: readonly PropSpec[] = SPECS;

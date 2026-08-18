@@ -711,7 +711,7 @@ export class CityBuilder {
    */
   private canPlaceAt(x: number, z: number): boolean {
     const t = this.tileAtWorld(x, z);
-    return !isRoad(t) && t !== 'B' && t !== 'H';
+    return !isRoad(t) && t !== 'B' && t !== 'H' && t !== 'R';
   }
 
   /**
@@ -963,6 +963,7 @@ export class CityBuilder {
   ) {
     const L = this.level;
     for (const c of L.collectibles) {
+      if (c.guarantee === false) continue;
       if (!(c.prop in PROPS)) continue;
       const def = prop(c.prop);
       const have = placements.reduce((n, p) => n + (p.def.id === c.prop ? 1 : 0), 0);

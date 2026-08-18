@@ -418,6 +418,7 @@ export const DOWNTOWN: LevelDef = {
       'building-a', 'building-b', 'building-c', 'building-d', 'building-e',
       'building-h', 'low-detail-building-wide-a', 'low-detail-building-wide-b',
     ],
+    demolitionTier: 8,
   },
   suburban: {
     kit: 'suburban',
@@ -425,6 +426,7 @@ export const DOWNTOWN: LevelDef = {
       'building-type-a', 'building-type-c', 'building-type-e', 'building-type-g',
       'building-type-i', 'building-type-k', 'building-type-m', 'building-type-o',
     ],
+    demolitionTier: 7,
   },
 
   surround: {

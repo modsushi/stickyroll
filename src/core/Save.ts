@@ -98,6 +98,15 @@ function read(): SaveData {
     // default from `fresh()` for a save written before it existed — which is
     // why new settings do not need a version bump, only additive ones.
     const base = fresh();
+    const unlocked = Array.isArray(parsed.unlockedLevels)
+      ? [...new Set(['intro-01', ...parsed.unlockedLevels])]
+      : ['intro-01', 'downtown-01'];
+    // Existing players who already earned a Downtown star should not have to
+    // replay it merely because Rail City shipped after their save was written.
+    if ((parsed.levels?.['downtown-01']?.stars ?? 0) > 0 && !unlocked.includes('rail-city-01')) {
+      unlocked.push('rail-city-01');
+    }
+
     return {
       ...base,
       ...parsed,
@@ -105,9 +114,7 @@ function read(): SaveData {
       settings: { ...base.settings, ...parsed.settings },
       // Existing players already had Downtown as their only option, so never
       // make an update appear to take content away from them.
-      unlockedLevels: Array.isArray(parsed.unlockedLevels)
-        ? [...new Set(['intro-01', ...parsed.unlockedLevels])]
-        : ['intro-01', 'downtown-01'],
+      unlockedLevels: unlocked,
       tutorials: { ...base.tutorials, ...parsed.tutorials },
       meta: { ...base.meta, ...parsed.meta, skins: dedupeSkins(parsed.meta?.skins) },
     };

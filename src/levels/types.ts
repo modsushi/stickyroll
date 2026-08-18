@@ -18,10 +18,11 @@ import type { KitId } from '../data/props';
  *   `T` park tree cluster          ` ` empty (treated as pavement)
  *   `P` plaza — paved open space; the spawn
  *   `M` market square — paved, where stalls and shop fittings go
+ *   `R` protected rail corridor — paved underneath, no loose scatter
  *   `C` cafe terrace — paved, directly in front of a commercial frontage;
  *       the only place outdoor seating is placed
  */
-export type TileChar = '#' | 'X' | ',' | '.' | 'B' | 'H' | 'T' | 'P' | 'M' | 'C' | ' ';
+export type TileChar = '#' | 'X' | ',' | '.' | 'B' | 'H' | 'T' | 'P' | 'M' | 'C' | 'R' | ' ';
 
 /** One prop within a cluster, positioned relative to the cluster's centre. */
 export interface ClusterItem {
@@ -137,6 +138,8 @@ export interface CollectibleSpec {
   /** How many exist in the level and must be gathered for a complete set. */
   target: number;
   label: string;
+  /** Dynamic systems can supply the set after CityBuilder; skip static top-up. */
+  guarantee?: boolean;
 }
 
 export interface BuildingSpec {
@@ -174,6 +177,38 @@ export interface WindSpec {
   strength?: number;
 }
 
+/** One moving train assembled from prop-catalog model ids. */
+export interface TrainConsistSpec {
+  units: string[];
+  /** Metres per second along the route. */
+  speed: number;
+  /** 0..1 starting position, so multiple trains do not spawn together. */
+  start?: number;
+  /** Reverse running creates believable traffic on a parallel track. */
+  direction?: 1 | -1;
+  /** Centre-to-centre gap in metres. Defaults to the pack's carriage length. */
+  gap?: number;
+}
+
+/** A compact station platform built beside a rail route. */
+export interface RailStationSpec {
+  at: [number, number];
+  /** Platform's long axis. Zero runs east-west. */
+  rot?: number;
+  length?: number;
+}
+
+/** Smooth closed railway with batched track and one or more moving consists. */
+export interface RailRouteSpec {
+  /** Control points in tile coordinates; fractional coordinates are allowed. */
+  points: [number, number][];
+  trackModel?: string;
+  /** Track-piece centre spacing in metres. */
+  trackSpacing?: number;
+  consists: TrainConsistSpec[];
+  stations?: RailStationSpec[];
+}
+
 export interface LevelDef {
   id: string;
   name: string;
@@ -194,6 +229,8 @@ export interface LevelDef {
   /** Props placed along straight runs — see LineSpec. */
   lines?: LineSpec[];
   lanes: LaneSpec[];
+  /** Optional animated railway network. */
+  rails?: RailRouteSpec[];
   /** Pedestrians wander tiles matching these chars. */
   pedestrianOn: TileChar[];
   pedestrians: number;

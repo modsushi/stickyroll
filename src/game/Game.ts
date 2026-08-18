@@ -23,6 +23,7 @@ import { CityBuilder, ROAD_MODELS, type BuiltCity } from './city/CityBuilder';
 import { Collectibles } from './Collectibles';
 import { Pedestrians } from './city/Pedestrians';
 import { Traffic } from './city/Traffic';
+import { Trains } from './city/Trains';
 import { Score } from './Score';
 import { Sticking, type Award } from './Sticking';
 import { TIERS } from './Growth';
@@ -49,6 +50,7 @@ export class Game {
   private baker!: BallBaker;
   private sticking!: Sticking;
   private traffic!: Traffic;
+  private trains!: Trains;
   private peds!: Pedestrians;
   private collectibles!: Collectibles;
   private decals!: Decals;
@@ -107,6 +109,7 @@ export class Game {
     const sky = this.level.surround?.skyline;
     if (sky) for (const m of sky.models) want(sky.kit, m);
     for (const m of Traffic.MODELS) want('cars', m);
+    for (const m of Trains.MODELS) want('trains', m);
     for (const m of Pedestrians.MODELS) want('characters', m);
     for (const stack of this.level.blockStacks ?? []) {
       for (const m of stack.models) want('blocks', m);
@@ -155,6 +158,7 @@ export class Game {
     this.sticking = new Sticking(this.ball, this.baker, this.city.hash);
     this.traffic = new Traffic(this.level, this.city);
     this.peds = new Pedestrians(this.level, this.city);
+    this.trains = new Trains(this.level, this.city);
     this.collectibles = new Collectibles(this.level, this.city);
     this.decals = new Decals(this.city);
     this.particles = new Particles();
@@ -166,6 +170,7 @@ export class Game {
     scene.add(
       this.traffic.group,
       this.peds.group,
+      this.trains.group,
       this.decals.group,
       this.particles.group,
       this.demolition.group
@@ -237,6 +242,7 @@ export class Game {
 
     this.traffic.step(dt, this.ball);
     this.peds.step(dt, this.ball);
+    this.trains.step(dt, this.ball);
     this.wind.step(dt);
     const crumbled = this.blocks.step(dt, this.ball);
     if (crumbled) {
@@ -425,6 +431,7 @@ export class Game {
     this.camera.update(this.ball.pos, this.ball.vel, this.ball.visualRadius, dt);
     this.renderer.focusShadow(this.ball.pos, this.ball.visualRadius);
     this.traffic?.render(dt);
+    this.trains?.render(dt);
     if (this.peds) {
       // The `!` marks are CPU-billboarded, same as the particle layer.
       this.peds.billboard.copy(this.renderer.camera.quaternion);
@@ -453,6 +460,9 @@ export class Game {
     const stars = this.level.stars.reduce((n, t) => (this.score.score >= t ? n + 1 : n), 0);
     save.recordLevel(this.level.id, this.score.score, stars, this.score.bestCombo);
     if (completed && this.level.id === 'intro-01') save.unlock('downtown-01');
+    // Standard city levels are score attacks rather than clear-everything
+    // objectives. Earning a star is their completion gate for the next map.
+    if (this.level.id === 'downtown-01' && stars > 0) save.unlock('rail-city-01');
 
     // XP is banked here rather than on the results screen: it is not a choice,
     // it cannot be declined, and a player who closes the tab during the count-up
@@ -479,6 +489,7 @@ export class Game {
     const scene = this.renderer.scene;
     this.baker?.clear();
     this.traffic?.dispose();
+    this.trains?.dispose();
     this.peds?.dispose();
     this.particles?.dispose();
     this.demolition?.dispose();
@@ -489,6 +500,7 @@ export class Game {
       this.city.group,
       this.traffic.group,
       this.peds.group,
+      this.trains.group,
       this.decals.group,
       this.particles.group,
       this.demolition.group,

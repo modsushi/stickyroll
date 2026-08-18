@@ -18,15 +18,20 @@ export class LevelSelect {
 
   show() {
     this.list.innerHTML = '';
-    for (const level of LEVELS) {
+    for (let i = 0; i < LEVELS.length; i++) {
+      const level = LEVELS[i];
       const unlocked = save.unlocked(level.id);
       const best = save.best(level.id);
+      const previous = LEVELS[Math.max(0, i - 1)];
+      const lockedCopy = level.id === 'rail-city-01'
+        ? 'Earn a star in Downtown Sweep to unlock'
+        : `Complete ${previous.name} to unlock`;
       const button = el('button', { class: 'level-card' }) as HTMLButtonElement;
       button.disabled = !unlocked;
       button.append(
         el('strong', {}, level.name),
         el('span', {}, level.subtitle),
-        el('small', {}, unlocked ? (best ? `Best ${best.score.toLocaleString()} · ${best.stars}★` : `${level.time}s · Ready to play`) : 'Complete Pocket Park to unlock')
+        el('small', {}, unlocked ? (best ? `Best ${best.score.toLocaleString()} · ${best.stars}★` : `${level.time}s · Ready to play`) : lockedCopy)
       );
       if (unlocked) button.addEventListener('click', () => this.onSelect(level));
       this.list.append(button);

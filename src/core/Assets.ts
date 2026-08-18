@@ -53,6 +53,7 @@ const KIT_TEXTURE: Record<KitId, string> = {
   blocks: '',
   food: '/models/food/Textures/colormap.png',
   pets: '/models/pets/Textures/colormap.png',
+  trains: '/models/trains/Textures/colormap.png',
   // Characters are the exception: one texture per character, resolved per-model.
   characters: '',
   // Furniture is untextured; its colour lives in vertex attributes.

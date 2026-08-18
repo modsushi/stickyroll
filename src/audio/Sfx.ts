@@ -101,6 +101,9 @@ class Sfx {
   private lastLock = 0;
   /** Keeps repeated block-stack contacts from stacking into static. */
   private lastBlocks = 0;
+  /** Rail ambience is proximity-driven and must not become a metronome wall. */
+  private lastRail = 0;
+  private lastTrainHorn = 0;
 
   /**
    * @param comboTier no longer changes pitch — only a little loudness and
@@ -1039,6 +1042,54 @@ class Sfx {
     }
     g.connect(a.sfxBus);
     a.send(g, 0.4);
+  }
+
+  /** Two-tone railway horn, lower and longer than the city's car horns. */
+  trainHorn(pitch = 1) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    if (t - this.lastTrainHorn < 1.8) return;
+    this.lastTrainHorn = t;
+
+    for (const [ratio, delay, amp] of [
+      [1, 0, 0.085],
+      [1.25, 0.09, 0.065],
+    ] as const) {
+      const at = t + delay;
+      const o = a.osc('sawtooth', 154 * pitch * ratio, at);
+      o.detune.setValueAtTime(ratio === 1 ? -4 : 5, at);
+      const lp = a.filter('lowpass', 760, 1.8);
+      const g = a.env(at, amp, 0.045, 0.58);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.58);
+      o.start(at);
+      o.stop(at + 1.25);
+    }
+  }
+
+  /** A short wheel-on-joint click heard only when a train passes nearby. */
+  railClack(pitch = 1) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    if (t - this.lastRail < 0.16) return;
+    this.lastRail = t;
+
+    for (const delay of [0, 0.055]) {
+      const at = t + delay;
+      const n = a.noise();
+      const bp = a.filter('bandpass', 1150 * pitch, 5.5);
+      const g = a.env(at, delay ? 0.024 : 0.034, 0.001, 0.035);
+      n.connect(bp);
+      bp.connect(g);
+      g.connect(a.sfxBus);
+      a.send(g, 0.12);
+      n.start(at);
+      n.stop(at + 0.12);
+    }
   }
 }
 
