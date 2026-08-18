@@ -64,6 +64,15 @@ export class SpatialHash<T extends HashItem> {
     this.items--;
   }
 
+  /** Re-hashes a moving item only when it actually crosses a cell boundary. */
+  update(item: T) {
+    if (item._removed || item._cell === undefined) return;
+    const next = this.index(item.x, item.z);
+    if (next === item._cell) return;
+    this.remove(item);
+    this.insert(item);
+  }
+
   /**
    * Visits every item whose cell overlaps the query disc. Callers still do the
    * precise distance test; this only rejects the obviously-far.

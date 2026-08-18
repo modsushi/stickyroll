@@ -33,6 +33,7 @@ import { Rand, clamp } from '../../core/Math';
 import { toggle } from '../../core/Debug';
 import { PROPS, prop, type PropDef } from '../../data/props';
 import type { LevelDef, TileChar } from '../../levels/types';
+import { TIERS } from '../Growth';
 import { SpatialHash } from '../SpatialHash';
 import { Props, chunkedScenery, type PropInstance } from './Props';
 
@@ -1060,8 +1061,18 @@ export class CityBuilder {
     for (const b of list) {
       const def = catalogued.get(`${b.kit}/${b.model}`);
       if (def) {
-        absorbable.push({ def, x: b.x, z: b.z, rotY: b.rotY, scale: b.scale });
+        const spec = b.kit === 'commercial' ? this.level.commercial : this.level.suburban;
+        const tier = spec.demolitionTier;
+        const cap = tier === undefined
+          ? Infinity
+          : TIERS[clamp(Math.round(tier), 0, TIERS.length - 1)].radius;
+        const demolitionDef = def.absorbSize <= cap ? def : { ...def, absorbSize: cap };
+        absorbable.push({ def: demolitionDef, x: b.x, z: b.z, rotY: b.rotY, scale: b.scale });
       } else {
+        const spec = b.kit === 'commercial' ? this.level.commercial : this.level.suburban;
+        if (spec.demolitionTier !== undefined) {
+          throw new Error(`destructible building is missing from prop catalog: ${b.kit}/${b.model}`);
+        }
         const key = `${b.kit}/${b.model}`;
         let arr = staticByModel.get(key);
         if (!arr) staticByModel.set(key, (arr = []));

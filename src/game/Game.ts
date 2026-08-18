@@ -31,6 +31,7 @@ import { Demolition } from '../render/Demolition';
 import { Particles } from '../render/Particles';
 import { BlockStacks } from './BlockStacks';
 import { CubePets } from './CubePets';
+import { Wind } from './Wind';
 
 const _dirScreen = { x: 0, y: 0 };
 const _dirWorld = new Vector3();
@@ -55,6 +56,7 @@ export class Game {
   private demolition!: Demolition;
   private blocks!: BlockStacks;
   private cubePets!: CubePets;
+  private wind!: Wind;
 
   timeLeft = 0;
   private lastCountdown = -1;
@@ -159,6 +161,7 @@ export class Game {
     this.demolition = new Demolition(this.particles);
     this.blocks = new BlockStacks(this.level, this.city.hash);
     this.cubePets = new CubePets(this.level);
+    this.wind = new Wind(this.level, this.city);
 
     scene.add(
       this.traffic.group,
@@ -234,6 +237,7 @@ export class Game {
 
     this.traffic.step(dt, this.ball);
     this.peds.step(dt, this.ball);
+    this.wind.step(dt);
     const crumbled = this.blocks.step(dt, this.ball);
     if (crumbled) {
       this.camera.shake(0.28);
@@ -480,6 +484,7 @@ export class Game {
     this.demolition?.dispose();
     this.blocks?.dispose();
     this.cubePets?.dispose();
+    this.wind?.dispose();
     scene.remove(
       this.city.group,
       this.traffic.group,

@@ -170,6 +170,57 @@ export class MeshBatch extends Group {
   }
 
   /**
+   * Moves one slot without rebuilding its geometry.
+   *
+   * This is deliberately translation-only: windblown props need to slide over
+   * the ground, and supporting that directly keeps the mobile merged backend
+   * viable. Re-baking a 300-object batch every frame (or falling back to 300
+   * ordinary meshes) would cost far more than the effect is worth.
+   */
+  translateAt(i: number, dx: number, dy: number, dz: number) {
+    if (i >= this.used || (!dx && !dy && !dz)) return;
+
+    const matrix = this.matrices[i];
+    if (matrix) {
+      matrix.elements[12] += dx;
+      matrix.elements[13] += dy;
+      matrix.elements[14] += dz;
+    }
+
+    if (this.inst) {
+      this.inst.getMatrixAt(i, _m);
+      _m.elements[12] += dx;
+      _m.elements[13] += dy;
+      _m.elements[14] += dz;
+      this.inst.setMatrixAt(i, _m);
+      this.inst.instanceMatrix.needsUpdate = true;
+      return;
+    }
+
+    if (this.mode === 'meshes') {
+      const child = this.kids[i];
+      if (!child) return;
+      child.matrix.elements[12] += dx;
+      child.matrix.elements[13] += dy;
+      child.matrix.elements[14] += dz;
+      child.matrixWorldNeedsUpdate = true;
+      return;
+    }
+
+    const range = this.ranges[i];
+    const pos = this.merged?.geometry.getAttribute('position');
+    if (!range || !pos) return;
+    const arr = pos.array as Float32Array;
+    for (let vertex = range.start; vertex < range.start + range.count; vertex++) {
+      const offset = vertex * 3;
+      arr[offset] += dx;
+      arr[offset + 1] += dy;
+      arr[offset + 2] += dz;
+    }
+    pos.needsUpdate = true;
+  }
+
+  /**
    * Collapses one slot so it stops drawing — the merged-geometry equivalent of
    * writing a zero-scale instance matrix.
    */

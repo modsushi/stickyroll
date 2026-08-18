@@ -74,6 +74,8 @@ export interface PropInstance extends HashItem {
   material: Material;
   /** Collapses this instance in its batch. */
   hide: () => void;
+  /** Moves the rendered slot by a world-space delta. */
+  translate?: (dx: number, dz: number) => void;
 }
 
 interface Batch {
@@ -153,6 +155,7 @@ export class Props {
       geometry: src.geometry,
       material: src.material,
       hide: () => batch.mesh.hideAt(slot),
+      translate: (dx, dz) => batch.mesh.translateAt(slot, dx, 0, dz),
     };
     this.all.push(inst);
     return inst;
@@ -175,6 +178,11 @@ export class Props {
   /** Batches in play. Only the on-screen ones become draw calls. */
   get batchCount() {
     return this.batches.size;
+  }
+
+  /** Refresh culling bounds after a group of wind translations. */
+  refitBounds() {
+    for (const batch of this.batches.values()) batch.mesh.computeBoundingSphere();
   }
 
   clear() {

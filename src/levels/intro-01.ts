@@ -1,22 +1,29 @@
 import type { LevelDef } from './types';
 
-/** A deliberately small first district: four blocks, three landmarks, one park. */
+/** A compact first district: nine blocks, three landmarks, one central park. */
 const MAP = [
-  ',,,,,,,,,,,,,,,',
-  ',......#......,',
-  ',......#....B.,',
-  ',......#......,',
-  ',......#......,',
-  ',......#......,',
-  ',......#......,',
-  '#######X#######',
-  ',......#......,',
-  ',......#......,',
-  ',..B...#..PCC.,',
-  ',......#...C..,',
-  ',......#..B.C.,',
-  ',......#...C..,',
-  ',,,,,,,,,,,,,,,',
+  ',,,,,,,,,,,,,,,,,,,,,,',
+  ',......#......#......,',
+  ',......#......#....B.,',
+  ',......#......#......,',
+  ',......#......#......,',
+  ',......#......#......,',
+  ',......#......#......,',
+  '#######X######X#######',
+  ',......#......#......,',
+  ',......#......#......,',
+  ',......#..PCC.#......,',
+  ',..H...#...C..#......,',
+  ',......#....C.#......,',
+  ',......#...C..#......,',
+  '#######X######X#######',
+  ',......#......#......,',
+  ',......#......#......,',
+  ',......#......#......,',
+  ',......#...B..#......,',
+  ',......#......#......,',
+  ',......#......#......,',
+  ',,,,,,,,,,,,,,,,,,,,,,',
 ];
 
 export const INTRO: LevelDef = {
@@ -37,7 +44,7 @@ export const INTRO: LevelDef = {
       props: ['food-cookie', 'food-strawberry', 'food-cherries', 'food-maki', 'food-apple', 'food-donut'],
       on: ['P', '.', 'C'], density: 2.4, maxFromStart: 12, scale: [0.84, 1.08],
     },
-    // Tiny picnic crumbs throughout the four blocks keep traversal rewarding,
+    // Tiny picnic crumbs throughout the nine blocks keep traversal rewarding,
     // but clumping leaves clean negative space around the authored scenes.
     {
       props: ['food-cookie', 'food-strawberry', 'food-cherries', 'food-maki', 'food-apple', 'food-donut'],
@@ -132,7 +139,7 @@ export const INTRO: LevelDef = {
       ],
     },
     {
-      id: 'street-food-zigzag', on: ['.'], at: [2, 3], count: 1, radius: 2.75, rot: -0.25,
+      id: 'street-food-zigzag', on: ['.'], at: [18, 3], count: 1, radius: 2.75, rot: -0.25,
       items: [
         { prop: 'food-taco', x: -1.65, z: -0.85, rot: -0.3 },
         { prop: 'food-fries', x: -0.75, z: -0.2, rot: 0.2 },
@@ -144,7 +151,7 @@ export const INTRO: LevelDef = {
       ],
     },
     {
-      id: 'orchard-crescent', on: ['.'], at: [5, 2], count: 1, radius: 2.9, freeRotation: true,
+      id: 'orchard-crescent', on: ['.'], at: [3, 3], count: 1, radius: 2.9, freeRotation: true,
       items: [
         { prop: 'food-apple', x: -1.75, z: 0.15, jitter: 0.15, randomRotation: true },
         { prop: 'food-banana', x: -1.05, z: -0.8, rot: -0.5 },
@@ -156,7 +163,7 @@ export const INTRO: LevelDef = {
       ],
     },
     {
-      id: 'dessert-sunburst', on: ['.'], at: [9, 2], count: 1, radius: 3.15, rot: 0.15,
+      id: 'dessert-sunburst', on: ['.'], at: [10, 3], count: 1, radius: 3.15, rot: 0.15,
       items: [
         { prop: 'food-cake', x: 0, z: 0, rot: 0.1 },
         { prop: 'food-cupcake', x: -1.45, z: -0.75, scale: [0.88, 1.08], randomRotation: true },
@@ -169,7 +176,7 @@ export const INTRO: LevelDef = {
       ],
     },
     {
-      id: 'cookout-diagonal', on: ['.'], at: [13, 5], count: 1, radius: 3.4, rot: -0.7,
+      id: 'cookout-diagonal', on: ['.'], at: [18, 10], count: 1, radius: 3.4, rot: -0.7,
       items: [
         { prop: 'food-burger', x: -1.8, z: -0.75, rot: 0.2 },
         { prop: 'food-hotdog', x: -0.55, z: -0.2, rot: -0.65 },
@@ -177,11 +184,11 @@ export const INTRO: LevelDef = {
         { prop: 'food-turkey', x: 1.55, z: 0.05, rot: 0.5 },
         { prop: 'food-soda', x: 1.25, z: 1.35, chance: 0.9 },
         { prop: 'food-taco', x: 0.05, z: 1.3, rot: -0.25 },
-        { prop: 'food-giant-burger', x: -1.45, z: 1.25, rot: 0.35 },
+        { prop: 'food-burger', x: -1.45, z: 1.25, rot: 0.35 },
       ],
     },
     {
-      id: 'lunchbox-crossing', on: ['.'], at: [9, 6], count: 1, radius: 3.0, rot: 0.3,
+      id: 'lunchbox-crossing', on: ['.'], at: [12, 16], count: 1, radius: 3.0, rot: 0.3,
       items: [
         { prop: 'food-sandwich', x: -1.75, z: -0.85, rot: -0.25 },
         { prop: 'food-pizza', x: -0.45, z: -1.15, rot: 0.45 },
@@ -194,7 +201,7 @@ export const INTRO: LevelDef = {
       ],
     },
     {
-      id: 'harvest-garden', on: ['.'], at: [5, 4], count: 1, radius: 3.05, rot: -0.4,
+      id: 'harvest-garden', on: ['.'], at: [18, 12], count: 1, radius: 3.05, rot: -0.4,
       items: [
         { prop: 'food-watermelon', x: -1.65, z: -1.05, rot: 0.25 },
         { prop: 'food-pineapple', x: 0, z: -1.25, rot: -0.15 },
@@ -207,51 +214,51 @@ export const INTRO: LevelDef = {
     },
 
     // ── Late-game spectacle ─────────────────────────────────────────────
-    // Three different compositions carry enough gated mass to reach tier 8.
-    // Their models are visually smaller than the earlier giant-food pass; the
-    // progression value lives in catalog bias rather than absurd scale.
+    // Three different compositions mark the late route without acting as mass
+    // jackpots. The remaining climb comes from many modest pickups around the
+    // district, so clearing one feast cannot skip several growth tiers.
     {
-      id: 'harvest-feast', on: ['.'], at: [2, 13], count: 1, radius: 4.2, rot: 0.25,
+      id: 'harvest-feast', on: ['.'], at: [3, 18], count: 1, radius: 4.2, rot: 0.25,
       items: [
-        { prop: 'food-giant-pineapple', x: -2.1, z: -1.3, rot: -0.2 },
-        { prop: 'food-giant-pineapple', x: 1.7, z: 1.25, rot: 0.35 },
-        { prop: 'food-giant-burger', x: 1.7, z: -1.65, rot: -0.45 },
-        { prop: 'food-giant-burger', x: -1.2, z: 1.7, rot: 0.6 },
+        { prop: 'food-pineapple', x: -2.1, z: -1.3, rot: -0.2 },
+        { prop: 'food-pineapple', x: 1.7, z: 1.25, rot: 0.35 },
+        { prop: 'food-burger', x: 1.7, z: -1.65, rot: -0.45 },
+        { prop: 'food-burger', x: -1.2, z: 1.7, rot: 0.6 },
         { prop: 'food-watermelon', x: 0.15, z: -0.1, rot: 0.1 },
       ],
     },
     {
-      id: 'pizza-parade', on: ['.'], at: [6, 13], count: 1, radius: 4.1, rot: -0.2,
+      id: 'pizza-parade', on: ['.'], at: [9, 19], count: 1, radius: 4.1, rot: -0.2,
       items: [
-        { prop: 'food-giant-pizza', x: -2.35, z: -1.15, rot: -0.2 },
-        { prop: 'food-giant-pizza', x: 0.15, z: -0.15, rot: 0.45 },
-        { prop: 'food-giant-pizza', x: 2.25, z: 1.25, rot: -0.55 },
-        { prop: 'food-festival-cake', x: -1.6, z: 1.75, rot: 0.2 },
+        { prop: 'food-pizza', x: -2.35, z: -1.15, rot: -0.2 },
+        { prop: 'food-pizza', x: 0.15, z: -0.15, rot: 0.45 },
+        { prop: 'food-pizza', x: 2.25, z: 1.25, rot: -0.55 },
+        { prop: 'food-cake', x: -1.6, z: 1.75, rot: 0.2 },
         { prop: 'food-soda', x: 1.75, z: -1.6, scale: 1.15 },
       ],
     },
     {
-      id: 'grand-picnic-finale', on: ['.'], at: [12, 13], count: 1, radius: 4.35, rot: 0.45,
+      id: 'grand-picnic-finale', on: ['.'], at: [18, 18], count: 1, radius: 4.35, rot: 0.45,
       items: [
-        { prop: 'food-festival-cake', x: 0, z: 0, rot: -0.25 },
-        { prop: 'food-giant-pizza', x: -2.45, z: -1.4, rot: 0.3 },
-        { prop: 'food-giant-pineapple', x: 2.2, z: -1.3, rot: -0.35 },
-        { prop: 'food-feast-turkey', x: -1.8, z: 1.65, rot: 0.55 },
-        { prop: 'food-giant-burger', x: 1.65, z: 1.75, rot: -0.4 },
+        { prop: 'food-cake', x: 0, z: 0, rot: -0.25 },
+        { prop: 'food-pizza', x: -2.45, z: -1.4, rot: 0.3 },
+        { prop: 'food-pineapple', x: 2.2, z: -1.3, rot: -0.35 },
+        { prop: 'food-turkey', x: -1.8, z: 1.65, rot: 0.55 },
+        { prop: 'food-burger', x: 1.65, z: 1.75, rot: -0.4 },
         { prop: 'food-cupcake', x: 2.8, z: 0.45, chance: 0.75, scale: 1.1 },
       ],
     },
 
     // ── Picnic-city set dressing ────────────────────────────────────────
     {
-      id: 'park-conversation', on: ['.'], at: [5, 6], count: 1, radius: 3.0, rot: Math.PI / 2,
+      id: 'park-conversation', on: ['.'], at: [17, 16], count: 1, radius: 3.0, rot: Math.PI / 2,
       items: [
         { prop: 'bench-cushion', x: 0, z: -1.0 }, { prop: 'bench-cushion', x: 0, z: 1.0, rot: Math.PI },
         { prop: 'potted-plant', x: 1.8, z: 0 }, { prop: 'basket', x: -1.65, z: 0.35, rot: 0.35 },
       ],
     },
     {
-      id: 'blanket-corner', on: ['.'], at: [2, 6], count: 1, radius: 2.8, rot: -0.2,
+      id: 'blanket-corner', on: ['.'], at: [3, 16], count: 1, radius: 2.8, rot: -0.2,
       items: [
         { prop: 'rug', x: 0, z: 0 }, { prop: 'basket', x: -1.15, z: 0.75, rot: -0.4 },
         { prop: 'potted-plant', x: 1.35, z: -0.75 }, { prop: 'food-croissant', x: 0.65, z: 0.55, rot: 0.2 },
@@ -267,6 +274,70 @@ export const INTRO: LevelDef = {
         { prop: 'potted-plant', x: 1.45, z: -1.25 },
       ],
     },
+
+    // ── Wind fodder ─────────────────────────────────────────────────────
+    // Dense, irregular heaps give the wind something worth rearranging. The
+    // four families deliberately use different footprints and object mixes;
+    // per-item jitter/chance keeps repeated heaps from looking stamped.
+    {
+      id: 'wind-main-course-heaps', on: ['.', ',', 'C'], count: [10, 13], radius: 2.15,
+      minFromStart: 10, freeRotation: true,
+      items: [
+        { prop: 'food-burger', x: -0.95, z: -0.45, jitter: 0.34, randomRotation: true },
+        { prop: 'food-watermelon', x: 0.1, z: -0.75, jitter: 0.28, chance: 0.68, randomRotation: true },
+        { prop: 'food-sandwich', x: 0.9, z: -0.55, jitter: 0.3, randomRotation: true },
+        { prop: 'food-pizza', x: -0.45, z: 0.05, jitter: 0.32, randomRotation: true },
+        { prop: 'food-turkey', x: 0.55, z: 0.15, jitter: 0.3, chance: 0.58, randomRotation: true },
+        { prop: 'food-cake', x: -1.15, z: 0.65, jitter: 0.3, chance: 0.7, randomRotation: true },
+        { prop: 'food-pineapple', x: -0.1, z: 0.85, jitter: 0.36, chance: 0.62, randomRotation: true },
+        { prop: 'food-hotdog', x: 1.05, z: 0.65, jitter: 0.32, chance: 0.72, randomRotation: true },
+        { prop: 'food-strawberry', x: -0.8, z: 1.2, jitter: 0.3, chance: 0.82, randomRotation: true },
+        { prop: 'food-maki', x: 0.65, z: 1.25, jitter: 0.34, chance: 0.76, randomRotation: true },
+        { prop: 'potted-plant', x: 1.35, z: -0.05, jitter: 0.25, chance: 0.6, randomRotation: true },
+      ],
+    },
+    {
+      id: 'wind-snack-heaps', on: ['.', ',', 'C'], count: [9, 13], radius: 1.55,
+      minFromStart: 7, freeRotation: true,
+      items: [
+        { prop: 'food-cookie', x: -0.65, z: -0.5, jitter: 0.28, randomRotation: true },
+        { prop: 'food-strawberry', x: 0.1, z: -0.7, jitter: 0.24, randomRotation: true },
+        { prop: 'food-maki', x: 0.7, z: -0.25, jitter: 0.3, randomRotation: true },
+        { prop: 'food-cherries', x: -0.75, z: 0.15, jitter: 0.2, randomRotation: true },
+        { prop: 'food-donut', x: 0, z: 0.1, jitter: 0.22, scale: [0.82, 1.04], randomRotation: true },
+        { prop: 'food-apple', x: 0.65, z: 0.5, jitter: 0.25, randomRotation: true },
+        { prop: 'food-cupcake', x: -0.25, z: 0.75, jitter: 0.2, chance: 0.75, randomRotation: true },
+        { prop: 'food-fries', x: 0.85, z: 0.15, jitter: 0.18, chance: 0.55, randomRotation: true },
+        { prop: 'food-soda', x: -0.85, z: -0.15, jitter: 0.18, chance: 0.65, randomRotation: true },
+      ],
+    },
+    {
+      id: 'wind-chair-tangles', on: ['.', ',', 'C'], count: [5, 8], radius: 2.25,
+      minFromStart: 10, freeRotation: true,
+      items: [
+        { prop: 'chair', x: -0.85, z: -0.6, rot: -0.5, jitter: 0.2 },
+        { prop: 'chair-rounded', x: 0.65, z: -0.75, rot: 0.7, jitter: 0.18 },
+        { prop: 'stool-bar', x: -0.15, z: 0.15, rot: -0.25, jitter: 0.25 },
+        { prop: 'side-table', x: 0.9, z: 0.5, rot: 0.4, jitter: 0.16, chance: 0.75 },
+        { prop: 'basket', x: -0.9, z: 0.65, rot: -0.7, jitter: 0.2 },
+        { prop: 'food-sandwich', x: 0.1, z: -0.95, jitter: 0.18, randomRotation: true },
+        { prop: 'food-croissant', x: 0.25, z: 0.85, jitter: 0.24, randomRotation: true },
+        { prop: 'food-cookie', x: -0.35, z: 0.55, jitter: 0.18, chance: 0.8, randomRotation: true },
+      ],
+    },
+    {
+      id: 'wind-bench-heaps', on: ['.'], count: [3, 5], radius: 2.75,
+      minFromStart: 13, freeRotation: true,
+      items: [
+        { prop: 'bench-cushion', x: -0.75, z: -0.55, rot: -0.45, jitter: 0.18 },
+        { prop: 'bench-cushion', x: 0.75, z: 0.55, rot: 0.7, jitter: 0.18, chance: 0.8 },
+        { prop: 'table-cafe', x: 0.65, z: -0.75, rot: 0.3, jitter: 0.15 },
+        { prop: 'chair', x: -0.9, z: 0.7, rot: -0.8, jitter: 0.18 },
+        { prop: 'chair-rounded', x: 0, z: 0.15, rot: 0.4, jitter: 0.2 },
+        { prop: 'food-pizza', x: -0.1, z: -1.05, jitter: 0.18, randomRotation: true },
+        { prop: 'food-burger', x: 1.15, z: 0.1, jitter: 0.16, chance: 0.7, randomRotation: true },
+      ],
+    },
   ],
   lanes: [],
   pedestrianOn: ['.', ',', 'P', 'C'],
@@ -278,18 +349,22 @@ export const INTRO: LevelDef = {
     { prop: 'food-cupcake', target: 16, label: 'Cupcakes' },
   ],
   stars: [500, 1000, 1700],
-  // Both models are in the prop catalog, so every `B` plot is a real
-  // demolition target once the ball is large enough.
-  commercial: { kit: 'commercial', models: ['building-a', 'building-d'] },
-  suburban: { kit: 'suburban', models: ['building-type-a'] },
+  // Tier 7 is the displayed eighth size. Capping the fitted plot models there
+  // keeps every B/H landmark destructible even when its source mesh is a few
+  // centimetres larger than the nominal tier boundary.
+  commercial: { kit: 'commercial', models: ['building-a', 'building-d'], demolitionTier: 7 },
+  suburban: { kit: 'suburban', models: ['building-type-a'], demolitionTier: 7 },
   blockStacks: [
     { at: [4, 5], models: ['wallBrick01', 'wallBrick04', 'stone02'], scale: 0.85, layers: 4 },
     { at: [10, 4], models: ['stone02', 'wallBrick04', 'wallBrick01'], scale: 0.72, layers: 3 },
   ],
   pets: [
     { at: [2, 2], model: 'animal-bunny', scale: 0.95 },
-    { at: [12, 8], model: 'animal-chick', scale: 0.8 },
-    { at: [4, 12], model: 'animal-dog', scale: 0.9 },
+    { at: [18, 9], model: 'animal-chick', scale: 0.8 },
+    { at: [4, 18], model: 'animal-dog', scale: 0.9 },
   ],
+  // A strong north-westerly slowly pushes snacks and furniture away from the
+  // spawn, eventually building changing piles along the far boundary.
+  wind: { direction: [-0.86, -0.5], strength: 1.25 },
   surround: { wallHeight: 4, wallThickness: 0.7, skyline: { kit: 'commercial', models: ['building-a'] }, skylineRings: 0, skylineGap: 16 },
 };

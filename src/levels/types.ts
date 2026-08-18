@@ -144,6 +144,8 @@ export interface BuildingSpec {
   models: string[];
   /** Uniform scale applied to every building from this set. */
   scale?: number;
+  /** Latest zero-based growth tier at which every configured model must fall. */
+  demolitionTier?: number;
 }
 
 /** A small, physics-like decorative stack that tumbles apart when the ball hits it. */
@@ -162,6 +164,14 @@ export interface PetSpec {
   at: [number, number];
   model: string;
   scale?: number;
+}
+
+/** A persistent ground-level wind that pushes loose props across the map. */
+export interface WindSpec {
+  /** X/Z direction; normalised by the runtime. */
+  direction: [number, number];
+  /** Multiplier for drift speed. One is a clearly visible steady breeze. */
+  strength?: number;
 }
 
 export interface LevelDef {
@@ -196,6 +206,8 @@ export interface LevelDef {
   /** Optional cute, breakable stacks made from the isometric block pack. */
   blockStacks?: BlockStackSpec[];
   pets?: PetSpec[];
+  /** Optional gusting wind applied to food, furniture and market props. */
+  wind?: WindSpec;
   /** Replaces ordinary pavement/grass with a cheerful gingham ground treatment. */
   picnicGround?: boolean;
   /** Boundary wall + the skyline placed beyond it. */

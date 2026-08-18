@@ -245,25 +245,16 @@ const SPECS: PropSpec[] = [
   { id: 'food-fries', kit: 'food', model: 'fries', tier: 1, label: 'Fries', voice: 'soft', scale: 0.9 },
   { id: 'food-cupcake', kit: 'food', model: 'cupcake', tier: 1, label: 'Cupcake', voice: 'soft', scale: 0.72 },
 
-  { id: 'food-sandwich', kit: 'food', model: 'sandwich', tier: 2, label: 'Sandwich', voice: 'soft', scale: 0.85, absorbBias: 1.3, massBias: 2.0 },
+  { id: 'food-sandwich', kit: 'food', model: 'sandwich', tier: 2, label: 'Sandwich', voice: 'soft', scale: 0.85, absorbBias: 1.3, massBias: 1.25 },
   { id: 'food-hotdog', kit: 'food', model: 'hot-dog', tier: 2, label: 'Hot Dog', voice: 'soft', scale: 0.55 },
   { id: 'food-taco', kit: 'food', model: 'taco', tier: 2, label: 'Taco', voice: 'soft', scale: 0.7, absorbBias: 1.25 },
-  { id: 'food-pizza', kit: 'food', model: 'pizza', tier: 2, label: 'Pizza Slice', voice: 'soft', scale: 0.62, massBias: 2.0 },
+  { id: 'food-pizza', kit: 'food', model: 'pizza', tier: 1, label: 'Pizza Slice', voice: 'soft', scale: 0.55, absorbBias: 0.85, massBias: 1.2 },
 
-  { id: 'food-burger', kit: 'food', model: 'burger-cheese-double', tier: 3, label: 'Double Burger', voice: 'soft', scale: 1.05, absorbBias: 1.45, massBias: 3.0 },
-  { id: 'food-cake', kit: 'food', model: 'cake-birthday', tier: 3, label: 'Birthday Cake', voice: 'soft', scale: 0.65, massBias: 3.0 },
-  { id: 'food-pineapple', kit: 'food', model: 'pineapple', tier: 4, label: 'Pineapple', voice: 'soft', scale: 1.25, absorbBias: 1.45, massBias: 4.0 },
-  { id: 'food-watermelon', kit: 'food', model: 'watermelon', tier: 4, label: 'Watermelon', voice: 'soft', scale: 1.25, absorbBias: 1.25, massBias: 4.0 },
-  { id: 'food-turkey', kit: 'food', model: 'turkey', tier: 4, label: 'Roast Turkey', voice: 'soft', scale: 0.85, absorbBias: 1.2, massBias: 4.0 },
-
-  // Finale pieces stay visually plausible for the compact map. Absorb bias
-  // gates them to the intended tier and mass bias preserves the route to tier
-  // eight without filling the park with seven-metre slices of pizza.
-  { id: 'food-giant-burger', kit: 'food', model: 'burger-cheese-double', tier: 5, label: 'Party Burger', voice: 'soft', scale: 1.6, absorbBias: 2.4, massBias: 3.5, pointsBias: 1.5 },
-  { id: 'food-giant-pizza', kit: 'food', model: 'pizza', tier: 6, label: 'Party Pizza', voice: 'soft', scale: 1.45, absorbBias: 1.62, massBias: 4.0, pointsBias: 2 },
-  { id: 'food-festival-cake', kit: 'food', model: 'cake-birthday', tier: 6, label: 'Festival Cake', voice: 'soft', scale: 1.1, absorbBias: 1.8, massBias: 4.0, pointsBias: 2.2 },
-  { id: 'food-feast-turkey', kit: 'food', model: 'turkey', tier: 6, label: 'Festival Roast', voice: 'soft', scale: 1.4, absorbBias: 1.55, massBias: 4.0, pointsBias: 2.2 },
-  { id: 'food-giant-pineapple', kit: 'food', model: 'pineapple', tier: 7, label: 'Festival Pineapple', voice: 'soft', scale: 2.0, absorbBias: 2.7, massBias: 4.0, pointsBias: 2.4 },
+  { id: 'food-burger', kit: 'food', model: 'burger-cheese-double', tier: 3, label: 'Double Burger', voice: 'soft', scale: 1.05, absorbBias: 1.45, massBias: 1.4 },
+  { id: 'food-cake', kit: 'food', model: 'cake-birthday', tier: 3, label: 'Birthday Cake', voice: 'soft', scale: 0.55, absorbBias: 1.182, massBias: 1.4 },
+  { id: 'food-pineapple', kit: 'food', model: 'pineapple', tier: 4, label: 'Pineapple', voice: 'soft', scale: 1.0, absorbBias: 1.813, massBias: 1.6 },
+  { id: 'food-watermelon', kit: 'food', model: 'watermelon', tier: 4, label: 'Watermelon', voice: 'soft', scale: 1.0, absorbBias: 1.563, massBias: 1.6 },
+  { id: 'food-turkey', kit: 'food', model: 'turkey', tier: 4, label: 'Roast Turkey', voice: 'soft', scale: 0.5, absorbBias: 2.04, massBias: 1.6 },
 
   // ── Street life: furniture kit ────────────────────────────────────────
   // These are what turn a scatter of debris into somewhere people were. Tiers
@@ -280,7 +271,7 @@ const SPECS: PropSpec[] = [
   { id: 'trashcan', kit: 'furniture', model: 'trashcan', tier: 1, label: 'Trash Can', voice: 'metal' },
   { id: 'box-open', kit: 'furniture', model: 'cardboardBoxOpen', tier: 1, label: 'Open Box', voice: 'wood' },
   { id: 'box-closed', kit: 'furniture', model: 'cardboardBoxClosed', tier: 1, label: 'Packed Box', voice: 'wood' },
-  { id: 'potted-plant', kit: 'furniture', model: 'pottedPlant', tier: 2, label: 'Potted Plant', voice: 'soft' },
+  { id: 'potted-plant', kit: 'furniture', model: 'pottedPlant', tier: 0, label: 'Potted Plant', voice: 'soft', absorbBias: 0.84 },
   { id: 'lamp-floor', kit: 'furniture', model: 'lampSquareFloor', tier: 2, label: 'Floor Lamp', voice: 'metal' },
   { id: 'tv', kit: 'furniture', model: 'televisionModern', tier: 2, label: 'Television', voice: 'metal' },
   { id: 'bench-cushion', kit: 'furniture', model: 'benchCushion', tier: 2, label: 'Padded Bench', voice: 'wood' },
