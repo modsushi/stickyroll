@@ -40,6 +40,8 @@ export interface GameEvents {
     /** The ball's visual radius at the moment of impact. */
     ballRadius: number;
   };
+  /** A decorative block tower burst into loose, passable pieces. */
+  blockCrumble: { blocks: number };
   /** Growth crossed a tier boundary. */
   tierUp: { tier: number; radius: number; prevRadius: number };
   /** A level collectible was picked up. */

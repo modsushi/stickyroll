@@ -63,6 +63,8 @@ const HORIZON_HAZE = new Color(0xc4dfec);
  * shop shelf here would trap the player before the first drag.
  */
 const START_CLEAR = 5;
+/** The new-run ball radius; starter arrangements must fit under this exactly. */
+const START_ABSORB_SIZE = 0.4;
 
 /** Neighbour bitmask: N=1 E=2 S=4 W=8. */
 function roadMask(map: string[], x: number, y: number): number {
@@ -196,6 +198,9 @@ export class CityBuilder {
     const roads = this.buildRoads();
     group.add(roads.group);
     drawCalls += roads.drawCalls;
+    const outerRoads = this.buildRoadExtensions(bounds);
+    group.add(outerRoads.group);
+    drawCalls += outerRoads.drawCalls;
 
     const props = new Props();
     const byProp = new Map<string, PropInstance[]>();
@@ -278,28 +283,47 @@ export class CityBuilder {
     // Bright, but pulled back from the near-neon it was — a real lawn, not a
     // highlighter.
     const grassColor = new Color(0x74b04a);
+    // Mild coral and warm cream keep the cloth cheerful without competing
+    // with the food, pets, blocks and player ball for attention.
+    const picnicLight = new Color(0xffeed1);
+    const picnicRed = new Color(0xf28b92);
 
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.cols; x++) {
         const c = this.at(x, y);
         if (isRoad(c)) continue;
         const isGrass = c === '.' || c === 'T';
-        const geo = new PlaneGeometry(t, t);
-        geo.rotateX(-Math.PI / 2);
-        geo.translate(this.worldX(x), 0, this.worldZ(y));
-
-        const base = isGrass ? grassColor : paveColor;
-        const v = 1 + (this.rand.next() - 0.5) * (isGrass ? 0.14 : 0.07);
-        const col = new Color(base.r * v, base.g * v, base.b * v);
-        const count = geo.attributes.position.count;
-        const arr = new Float32Array(count * 3);
-        for (let i = 0; i < count; i++) {
-          arr[i * 3] = col.r;
-          arr[i * 3 + 1] = col.g;
-          arr[i * 3 + 2] = col.b;
+        // Kenney's development essentials include a checkerboard reference.
+        // The intro turns that utilitarian pattern into a gingham picnic cloth.
+        // Four checks per four-metre map tile: the playable cloth uses the
+        // requested 1x1-metre weave while the distant apron stays coarse.
+        const divisions = L.picnicGround ? 4 : 1;
+        for (let gy = 0; gy < divisions; gy++) {
+          for (let gx = 0; gx < divisions; gx++) {
+            const cell = t / divisions;
+            const geo = new PlaneGeometry(cell, cell);
+            geo.rotateX(-Math.PI / 2);
+            geo.translate(
+              this.worldX(x) + (gx + 0.5 - divisions / 2) * cell,
+              0,
+              this.worldZ(y) + (gy + 0.5 - divisions / 2) * cell
+            );
+            const base = L.picnicGround
+              ? ((x * divisions + gx + y * divisions + gy) % 2 === 0 ? picnicLight : picnicRed)
+              : (isGrass ? grassColor : paveColor);
+            const v = 1 + (this.rand.next() - 0.5) * (L.picnicGround ? 0.035 : isGrass ? 0.14 : 0.07);
+            const col = new Color(base.r * v, base.g * v, base.b * v);
+            const count = geo.attributes.position.count;
+            const arr = new Float32Array(count * 3);
+            for (let i = 0; i < count; i++) {
+              arr[i * 3] = col.r;
+              arr[i * 3 + 1] = col.g;
+              arr[i * 3 + 2] = col.b;
+            }
+            geo.setAttribute('color', new BufferAttribute(arr, 3));
+            (isGrass ? grass : pave).push(geo);
+          }
         }
-        geo.setAttribute('color', new BufferAttribute(arr, 3));
-        (isGrass ? grass : pave).push(geo);
       }
     }
 
@@ -330,16 +354,49 @@ export class CityBuilder {
     // map ended and here is a field"; a hazy grey reads as more city receding
     // into the distance, which is the whole point of the wall and skyline.
     const span = Math.max(this.cols, this.rows) * t * 5;
-    const skirt = new PlaneGeometry(span, span);
-    skirt.rotateX(-Math.PI / 2);
-    const skirtMesh = new Mesh(
-      skirt,
-      makeLit({ color: 0xb3bac0, roughness: 1, metalness: 0 })
-    );
-    skirtMesh.position.y = -0.06;
-    skirtMesh.receiveShadow = false;
-    skirtMesh.frustumCulled = false;
-    g.add(skirtMesh);
+    if (L.picnicGround) {
+      // Carry the palette beyond the wall under the fake continuation roads.
+      // Full-tile checks are sufficient here: this visual-only apron is seen
+      // through fog, while the playable map above uses its finer 1 m weave.
+      const checks: BufferGeometry[] = [];
+      const cell = t;
+      const steps = Math.ceil(span / cell);
+      for (let z = 0; z < steps; z++) {
+        for (let x = 0; x < steps; x++) {
+          const geo = new PlaneGeometry(cell, cell);
+          geo.rotateX(-Math.PI / 2);
+          geo.translate((x + 0.5 - steps / 2) * cell, -0.06, (z + 0.5 - steps / 2) * cell);
+          const base = (x + z) % 2 === 0 ? picnicLight : picnicRed;
+          const arr = new Float32Array(geo.attributes.position.count * 3);
+          for (let i = 0; i < geo.attributes.position.count; i++) {
+            arr[i * 3] = base.r;
+            arr[i * 3 + 1] = base.g;
+            arr[i * 3 + 2] = base.b;
+          }
+          geo.setAttribute('color', new BufferAttribute(arr, 3));
+          checks.push(geo);
+        }
+      }
+      const merged = BufferGeometryUtils.mergeGeometries(checks, false);
+      for (const geo of checks) geo.dispose();
+      if (merged) {
+        const skirtMesh = new Mesh(merged, makeLit({ vertexColors: true, roughness: 1, metalness: 0 }));
+        skirtMesh.receiveShadow = false;
+        skirtMesh.frustumCulled = false;
+        g.add(skirtMesh);
+      }
+    } else {
+      const skirt = new PlaneGeometry(span, span);
+      skirt.rotateX(-Math.PI / 2);
+      const skirtMesh = new Mesh(
+        skirt,
+        makeLit({ color: 0xb3bac0, roughness: 1, metalness: 0 })
+      );
+      skirtMesh.position.y = -0.06;
+      skirtMesh.receiveShadow = false;
+      skirtMesh.frustumCulled = false;
+      g.add(skirtMesh);
+    }
 
     return g;
   }
@@ -591,6 +648,53 @@ export class CityBuilder {
     return { group: g, drawCalls: buckets.size };
   }
 
+  /**
+   * Continues edge-bound roads beyond the collision wall. These are scenery:
+   * the ball remains clamped to the district, but the camera sees a city that
+   * keeps going until the fog gently takes it away.
+   */
+  private buildRoadExtensions(bounds: BuiltCity['bounds']): { group: Group; drawCalls: number } {
+    const g = new Group();
+    g.name = 'roads-beyond-wall';
+    if (!assets.has('roads', 'road-straight')) return { group: g, drawCalls: 0 };
+
+    const nearTop = new Set<number>();
+    const nearBottom = new Set<number>();
+    const nearLeft = new Set<number>();
+    const nearRight = new Set<number>();
+    // A road one tile in from the rim still visibly runs into the wall, so it
+    // earns an exterior continuation too. This catches the intro's cross while
+    // remaining data-driven for future maps.
+    const rim = Math.min(2, Math.floor(Math.min(this.rows, this.cols) / 3));
+    for (let y = 0; y <= rim; y++) for (let x = 0; x < this.cols; x++) if (isRoad(this.at(x, y))) nearTop.add(x);
+    for (let y = this.rows - 1 - rim; y < this.rows; y++) for (let x = 0; x < this.cols; x++) if (isRoad(this.at(x, y))) nearBottom.add(x);
+    for (let x = 0; x <= rim; x++) for (let y = 0; y < this.rows; y++) if (isRoad(this.at(x, y))) nearLeft.add(y);
+    for (let x = this.cols - 1 - rim; x < this.cols; x++) for (let y = 0; y < this.rows; y++) if (isRoad(this.at(x, y))) nearRight.add(y);
+
+    const cells: { x: number; z: number; turns: number }[] = [];
+    const t = this.level.tileSize;
+    const length = 15; // 60 m: fully swallowed by the fog's far edge.
+    for (const x of nearTop) for (let i = 0; i < length; i++) cells.push({ x: this.worldX(x), z: bounds.minZ - t * (i + 0.5), turns: 1 });
+    for (const x of nearBottom) for (let i = 0; i < length; i++) cells.push({ x: this.worldX(x), z: bounds.maxZ + t * (i + 0.5), turns: 1 });
+    for (const y of nearLeft) for (let i = 0; i < length; i++) cells.push({ x: bounds.minX - t * (i + 0.5), z: this.worldZ(y), turns: 0 });
+    for (const y of nearRight) for (let i = 0; i < length; i++) cells.push({ x: bounds.maxX + t * (i + 0.5), z: this.worldZ(y), turns: 0 });
+    if (!cells.length) return { group: g, drawCalls: 0 };
+
+    const src = assets.get('roads', 'road-straight');
+    const mesh = new MeshBatch(src.geometry, src.material, cells.length);
+    mesh.setShadows(false, false);
+    cells.forEach((cell, i) => {
+      _p.set(cell.x, 0, cell.z);
+      _q.setFromAxisAngle(UP, (-cell.turns * Math.PI) / 2);
+      _m.compose(_p, _q, _s);
+      mesh.setMatrixAt(i, _m);
+    });
+    mesh.build();
+    mesh.computeBoundingSphere();
+    g.add(mesh);
+    return { group: g, drawCalls: 1 };
+  }
+
   // ── props ───────────────────────────────────────────────────────────────
 
   /** Tile under a world position. */
@@ -650,33 +754,45 @@ export class CityBuilder {
 
       const on = new Set<string>(spec.on);
       const cells: [number, number][] = [];
-      for (let y = 0; y < this.rows; y++) {
-        for (let x = 0; x < this.cols; x++) {
-          if (on.has(this.at(x, y))) cells.push([x, y]);
+      if (spec.at) {
+        if (on.has(this.at(spec.at[0], spec.at[1]))) cells.push(spec.at);
+      } else {
+        for (let y = 0; y < this.rows; y++) {
+          for (let x = 0; x < this.cols; x++) {
+            if (on.has(this.at(x, y))) cells.push([x, y]);
+          }
         }
       }
       if (!cells.length) continue;
 
+      const count = spec.at ? 1 : Array.isArray(spec.count)
+        ? this.rand.int(Math.min(spec.count[0], spec.count[1]), Math.max(spec.count[0], spec.count[1]))
+        : spec.count;
+      const starterSafe = !!spec.allowNearStart && defs.every((item) => {
+        const def = prop(item.prop);
+        const scale = Array.isArray(item.scale) ? Math.max(...item.scale) : (item.scale ?? 1);
+        return def.tier === 0 && def.absorbSize * scale <= START_ABSORB_SIZE;
+      });
       let placed = 0;
       // Bounded attempts: a crowded level should thin the clusters out, not
       // spin forever looking for room that isn't there.
-      for (let attempt = 0; attempt < spec.count * 40 && placed < spec.count; attempt++) {
+      for (let attempt = 0; attempt < count * 40 && placed < count; attempt++) {
         const [tx, ty] = this.rand.pick(cells);
-        const cx = this.worldX(tx) + this.rand.range(-0.3, 0.3) * L.tileSize;
-        const cz = this.worldZ(ty) + this.rand.range(-0.3, 0.3) * L.tileSize;
+        const cx = this.worldX(tx) + (spec.at ? 0 : this.rand.range(-0.3, 0.3) * L.tileSize);
+        const cz = this.worldZ(ty) + (spec.at ? 0 : this.rand.range(-0.3, 0.3) * L.tileSize);
 
         const d = Math.hypot(cx - startX, cz - startZ);
         // Nothing furniture-sized may sit on the spawn. The ball starts at
         // 0.4 m and cannot move a cafe table, so a cluster landing here would
         // wedge the player in before they had touched the controls.
-        if (d < START_CLEAR + spec.radius) continue;
+        if (!starterSafe && d < START_CLEAR + spec.radius) continue;
         if (spec.minFromStart && d < spec.minFromStart) continue;
         if (spec.maxFromStart && d > spec.maxFromStart) continue;
         if (!this.claim(occupied, cx, cz, spec.radius)) continue;
 
-        const yaw = spec.freeRotation
+        const yaw = spec.rot ?? (spec.freeRotation
           ? this.rand.angle()
-          : this.rand.int(0, 3) * (Math.PI / 2);
+          : this.rand.int(0, 3) * (Math.PI / 2));
         const cos = Math.cos(yaw);
         const sin = Math.sin(yaw);
 
@@ -696,15 +812,22 @@ export class CityBuilder {
         // possible 40. A cluster's own `on` list is a statement of intent and
         // has to outrank the generic rule.
         for (const item of defs) {
-          const ix = cx + item.x * cos + item.z * sin;
-          const iz = cz - item.x * sin + item.z * cos;
+          if (item.chance !== undefined && !this.rand.chance(item.chance)) continue;
+          const jitter = item.jitter ?? 0;
+          const ox = item.x + (jitter ? this.rand.range(-jitter, jitter) : 0);
+          const oz = item.z + (jitter ? this.rand.range(-jitter, jitter) : 0);
+          const ix = cx + ox * cos + oz * sin;
+          const iz = cz - ox * sin + oz * cos;
           if (!on.has(this.tileAtWorld(ix, iz)) && !this.canPlaceAt(ix, iz)) continue;
+          const scale = Array.isArray(item.scale)
+            ? this.rand.range(Math.min(...item.scale), Math.max(...item.scale))
+            : (item.scale ?? 1);
           out.push({
             def: prop(item.prop),
             x: ix,
             z: iz,
-            rotY: yaw + (item.rot ?? 0),
-            scale: item.scale ?? 1,
+            rotY: item.randomRotation ? this.rand.angle() : yaw + (item.rot ?? 0),
+            scale,
             lift: item.y,
           });
         }
@@ -803,7 +926,7 @@ export class CityBuilder {
             {
               const d = Math.hypot(wx - startX, wz - startZ);
               // Anything the starting ball cannot eat stays off the spawn.
-              if (def.absorbSize > 0.35 && d < START_CLEAR) continue;
+              if (def.absorbSize > START_ABSORB_SIZE && d < START_CLEAR) continue;
               if (rule.minFromStart && d < rule.minFromStart) continue;
               if (rule.maxFromStart && d > rule.maxFromStart) continue;
             }

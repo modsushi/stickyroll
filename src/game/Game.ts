@@ -29,6 +29,8 @@ import { TIERS } from './Growth';
 import { Decals } from '../render/Decals';
 import { Demolition } from '../render/Demolition';
 import { Particles } from '../render/Particles';
+import { BlockStacks } from './BlockStacks';
+import { CubePets } from './CubePets';
 
 const _dirScreen = { x: 0, y: 0 };
 const _dirWorld = new Vector3();
@@ -51,6 +53,8 @@ export class Game {
   private decals!: Decals;
   private particles!: Particles;
   private demolition!: Demolition;
+  private blocks!: BlockStacks;
+  private cubePets!: CubePets;
 
   timeLeft = 0;
   private lastCountdown = -1;
@@ -102,6 +106,10 @@ export class Game {
     if (sky) for (const m of sky.models) want(sky.kit, m);
     for (const m of Traffic.MODELS) want('cars', m);
     for (const m of Pedestrians.MODELS) want('characters', m);
+    for (const stack of this.level.blockStacks ?? []) {
+      for (const m of stack.models) want('blocks', m);
+    }
+    for (const pet of this.level.pets ?? []) want('pets', pet.model);
 
     const list = [...models.values()];
     let done = 0;
@@ -149,6 +157,8 @@ export class Game {
     this.decals = new Decals(this.city);
     this.particles = new Particles();
     this.demolition = new Demolition(this.particles);
+    this.blocks = new BlockStacks(this.level, this.city.hash);
+    this.cubePets = new CubePets(this.level);
 
     scene.add(
       this.traffic.group,
@@ -156,6 +166,7 @@ export class Game {
       this.decals.group,
       this.particles.group,
       this.demolition.group
+      , this.blocks.group, this.cubePets.group
     );
     scene.add(this.ball.group);
 
@@ -223,6 +234,13 @@ export class Game {
 
     this.traffic.step(dt, this.ball);
     this.peds.step(dt, this.ball);
+    const crumbled = this.blocks.step(dt, this.ball);
+    if (crumbled) {
+      this.camera.shake(0.28);
+      this.camera.punch(0.05);
+      this.particles.spark(this.ball.pos.x, this.ball.pos.y, this.ball.pos.z, 14 * crumbled);
+      bus.emit('blockCrumble', { blocks: crumbled });
+    }
 
     const before = this.ball.growth.tier;
     this.sticking.update((p, def): Award => {
@@ -411,6 +429,7 @@ export class Game {
     this.decals?.update(this.ball);
     this.particles?.update(dt);
     this.demolition?.update(dt);
+    this.cubePets?.update(dt);
     this.collectibles?.render(dt);
   }
 
@@ -459,6 +478,8 @@ export class Game {
     this.peds?.dispose();
     this.particles?.dispose();
     this.demolition?.dispose();
+    this.blocks?.dispose();
+    this.cubePets?.dispose();
     scene.remove(
       this.city.group,
       this.traffic.group,
@@ -466,6 +487,8 @@ export class Game {
       this.decals.group,
       this.particles.group,
       this.demolition.group,
+      this.blocks.group,
+      this.cubePets.group,
       this.ball.group
     );
     this.city.props.clear();

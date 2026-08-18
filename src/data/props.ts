@@ -23,7 +23,10 @@ export type KitId =
   | 'suburban'
   | 'characters'
   | 'furniture'
-  | 'market';
+  | 'market'
+  | 'blocks'
+  | 'food'
+  | 'pets';
 
 /** Multiplier that brings each kit into metres. */
 export const KIT_SCALE: Record<KitId, number> = {
@@ -35,6 +38,13 @@ export const KIT_SCALE: Record<KitId, number> = {
   // and a table is 0.72 m; a market shelf is 0.89 units and a shop shelf 1.6 m.
   furniture: 2.2,
   market: 1.8,
+  // Devil's Workshop exports its isometric pieces on a 100-unit grid.
+  blocks: 0.01,
+  // Food props are authored as small tabletop pieces. Four makes their low-poly
+  // silhouettes readable from the game camera; individual catalog scales then
+  // keep snacks small and reserve the oversized treatment for finale food.
+  food: 4.0,
+  pets: 1.0,
   // Characters are normalised to a target height at load instead, because the
   // pack's raw units don't relate to the other kits at all.
   characters: 1.0,
@@ -57,6 +67,11 @@ export const KIT_MATERIAL: Record<KitId, 'atlas' | 'vertexColor'> = {
   suburban: 'atlas',
   characters: 'atlas',
   market: 'atlas',
+  // The block pack uses one texture per model. Its FBX material colours are
+  // baked to vertices instead, keeping the runtime draw path pleasantly small.
+  blocks: 'vertexColor',
+  food: 'atlas',
+  pets: 'atlas',
   furniture: 'vertexColor',
 };
 
@@ -203,6 +218,52 @@ const SPECS: PropSpec[] = [
   { id: 'hatchback', kit: 'cars', model: 'hatchback-sports', tier: 6, label: 'Hatchback', voice: 'car' },
   { id: 'sign-highway', kit: 'roads', model: 'sign-highway', tier: 6, label: 'Road Sign', voice: 'metal' },
   { id: 'van', kit: 'cars', model: 'van', tier: 6, label: 'Van', voice: 'car' },
+
+  // ── Breakable toy blocks ───────────────────────────────────────────────
+  // These begin life stacked as scenery, then enter the normal prop hash once
+  // they have tumbled to the ground. Tier 0 keeps the post-crumble reward
+  // immediate: rolling through the scattered blocks is the whole joke.
+  { id: 'block-brick-coral', kit: 'blocks', model: 'wallBrick01', tier: 0, label: 'Toy Brick', voice: 'wood', massBias: 0.55 },
+  { id: 'block-brick-teal', kit: 'blocks', model: 'wallBrick04', tier: 0, label: 'Toy Brick', voice: 'wood', massBias: 0.55 },
+  { id: 'block-stone', kit: 'blocks', model: 'stone02', tier: 0, label: 'Toy Block', voice: 'wood', massBias: 0.55 },
+
+  // ── Picnic feast · a level-specific climb through every size ───────────
+  // The pack contains more than 200 foods and shares one tiny palette atlas.
+  // A curated set of distinct silhouettes is therefore almost free at runtime
+  // and gives the picnic far more visual vocabulary than scaling five models.
+  { id: 'food-cookie', kit: 'food', model: 'cookie-chocolate', tier: 0, label: 'Cookie', voice: 'soft', scale: 0.9 },
+  { id: 'food-strawberry', kit: 'food', model: 'strawberry', tier: 0, label: 'Strawberry', voice: 'soft', scale: 0.9 },
+  { id: 'food-cherries', kit: 'food', model: 'cherries', tier: 0, label: 'Cherries', voice: 'soft', scale: 0.9 },
+  { id: 'food-maki', kit: 'food', model: 'maki-salmon', tier: 0, label: 'Salmon Maki', voice: 'soft', scale: 0.9 },
+  { id: 'food-apple', kit: 'food', model: 'apple', tier: 0, label: 'Apple', voice: 'soft', scale: 0.9 },
+  { id: 'food-donut', kit: 'food', model: 'donut', tier: 0, label: 'Donut', voice: 'soft', scale: 0.85 },
+
+  { id: 'food-croissant', kit: 'food', model: 'croissant', tier: 1, label: 'Croissant', voice: 'soft', scale: 0.48 },
+  { id: 'food-muffin', kit: 'food', model: 'muffin', tier: 1, label: 'Muffin', voice: 'soft', scale: 0.7 },
+  { id: 'food-banana', kit: 'food', model: 'banana', tier: 1, label: 'Banana', voice: 'soft', scale: 0.55 },
+  { id: 'food-soda', kit: 'food', model: 'soda-can', tier: 1, label: 'Soda Can', voice: 'soft', scale: 0.72 },
+  { id: 'food-fries', kit: 'food', model: 'fries', tier: 1, label: 'Fries', voice: 'soft', scale: 0.9 },
+  { id: 'food-cupcake', kit: 'food', model: 'cupcake', tier: 1, label: 'Cupcake', voice: 'soft', scale: 0.72 },
+
+  { id: 'food-sandwich', kit: 'food', model: 'sandwich', tier: 2, label: 'Sandwich', voice: 'soft', scale: 0.85, absorbBias: 1.3, massBias: 2.0 },
+  { id: 'food-hotdog', kit: 'food', model: 'hot-dog', tier: 2, label: 'Hot Dog', voice: 'soft', scale: 0.55 },
+  { id: 'food-taco', kit: 'food', model: 'taco', tier: 2, label: 'Taco', voice: 'soft', scale: 0.7, absorbBias: 1.25 },
+  { id: 'food-pizza', kit: 'food', model: 'pizza', tier: 2, label: 'Pizza Slice', voice: 'soft', scale: 0.62, massBias: 2.0 },
+
+  { id: 'food-burger', kit: 'food', model: 'burger-cheese-double', tier: 3, label: 'Double Burger', voice: 'soft', scale: 1.05, absorbBias: 1.45, massBias: 3.0 },
+  { id: 'food-cake', kit: 'food', model: 'cake-birthday', tier: 3, label: 'Birthday Cake', voice: 'soft', scale: 0.65, massBias: 3.0 },
+  { id: 'food-pineapple', kit: 'food', model: 'pineapple', tier: 4, label: 'Pineapple', voice: 'soft', scale: 1.25, absorbBias: 1.45, massBias: 4.0 },
+  { id: 'food-watermelon', kit: 'food', model: 'watermelon', tier: 4, label: 'Watermelon', voice: 'soft', scale: 1.25, absorbBias: 1.25, massBias: 4.0 },
+  { id: 'food-turkey', kit: 'food', model: 'turkey', tier: 4, label: 'Roast Turkey', voice: 'soft', scale: 0.85, absorbBias: 1.2, massBias: 4.0 },
+
+  // Finale pieces stay visually plausible for the compact map. Absorb bias
+  // gates them to the intended tier and mass bias preserves the route to tier
+  // eight without filling the park with seven-metre slices of pizza.
+  { id: 'food-giant-burger', kit: 'food', model: 'burger-cheese-double', tier: 5, label: 'Party Burger', voice: 'soft', scale: 1.6, absorbBias: 2.4, massBias: 3.5, pointsBias: 1.5 },
+  { id: 'food-giant-pizza', kit: 'food', model: 'pizza', tier: 6, label: 'Party Pizza', voice: 'soft', scale: 1.45, absorbBias: 1.62, massBias: 4.0, pointsBias: 2 },
+  { id: 'food-festival-cake', kit: 'food', model: 'cake-birthday', tier: 6, label: 'Festival Cake', voice: 'soft', scale: 1.1, absorbBias: 1.8, massBias: 4.0, pointsBias: 2.2 },
+  { id: 'food-feast-turkey', kit: 'food', model: 'turkey', tier: 6, label: 'Festival Roast', voice: 'soft', scale: 1.4, absorbBias: 1.55, massBias: 4.0, pointsBias: 2.2 },
+  { id: 'food-giant-pineapple', kit: 'food', model: 'pineapple', tier: 7, label: 'Festival Pineapple', voice: 'soft', scale: 2.0, absorbBias: 2.7, massBias: 4.0, pointsBias: 2.4 },
 
   // ── Street life: furniture kit ────────────────────────────────────────
   // These are what turn a scatter of debris into somewhere people were. Tiers

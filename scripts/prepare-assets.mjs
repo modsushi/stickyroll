@@ -21,6 +21,9 @@ export const KITS = {
   characters: 'kenney_blocky-characters_20',
   market: 'kenney_mini-market',
   furniture: 'kenney_furniture-kit',
+  blocks: 'Essential_Isometric_3D_Block_Pack_Devilsworkshop_v2.0',
+  food: 'kenney_food-kit',
+  pets: 'kenney_cube-pets_1.0',
 };
 
 /** Packs disagree on what they call the folder holding the .glb files. */
@@ -82,7 +85,9 @@ async function referencedNames() {
 }
 
 async function copyKit(id, pack, wanted) {
-  const from = MODEL_DIRS.map((d) => join(src, pack, 'Models', d)).find(existsSync);
+  const from = id === 'blocks'
+    ? join(src, pack, 'Assets', 'FBX')
+    : MODEL_DIRS.map((d) => join(src, pack, 'Models', d)).find(existsSync);
   if (!from) throw new Error(`no model folder in pack: ${pack}`);
   const to = join(out, 'models', id);
   await mkdir(to, { recursive: true });
@@ -90,6 +95,7 @@ async function copyKit(id, pack, wanted) {
   const entries = await readdir(from, { withFileTypes: true });
   let models = 0;
   let skipped = 0;
+  const ext = id === 'blocks' ? '.fbx' : '.glb';
   for (const e of entries) {
     if (e.isDirectory() && e.name === 'Textures') {
       // The character pack has one texture per character (`character-f` ->
@@ -103,14 +109,17 @@ async function copyKit(id, pack, wanted) {
           return !m || wanted.has(`character-${m[1]}`);
         },
       });
-    } else if (e.isFile() && e.name.endsWith('.glb')) {
-      if (!wanted.has(e.name.slice(0, -4))) {
+    } else if (e.isFile() && e.name.endsWith(ext)) {
+      if (!wanted.has(e.name.slice(0, -ext.length))) {
         skipped++;
         continue;
       }
       await cp(join(from, e.name), join(to, e.name));
       models++;
     }
+  }
+  if (id === 'blocks') {
+    await cp(join(src, pack, 'Assets', 'Textures'), join(to, 'Textures'), { recursive: true });
   }
   return { models, skipped };
 }

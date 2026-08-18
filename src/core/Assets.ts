@@ -28,6 +28,7 @@ import {
 } from 'three';
 import { type LitMaterial, makeLit } from '../render/litMaterial';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CHARACTER_HEIGHT, KIT_MATERIAL, KIT_SCALE, type KitId } from '../data/props';
 
@@ -49,6 +50,9 @@ const KIT_TEXTURE: Record<KitId, string> = {
   commercial: '/models/commercial/Textures/colormap.png',
   suburban: '/models/suburban/Textures/colormap.png',
   market: '/models/market/Textures/colormap.png',
+  blocks: '',
+  food: '/models/food/Textures/colormap.png',
+  pets: '/models/pets/Textures/colormap.png',
   // Characters are the exception: one texture per character, resolved per-model.
   characters: '',
   // Furniture is untextured; its colour lives in vertex attributes.
@@ -60,6 +64,7 @@ const _white = new Color(1, 1, 1);
 
 export class Assets {
   private gltf = new GLTFLoader();
+  private fbx = new FBXLoader();
   private tex = new TextureLoader();
   private materials = new Map<string, LitMaterial>();
   private textures = new Map<string, Texture>();
@@ -117,7 +122,7 @@ export class Assets {
   }
 
   private url(kit: KitId, model: string) {
-    return `/models/${kit}/${model}.glb`;
+    return `/models/${kit}/${model}.${kit === 'blocks' ? 'fbx' : 'glb'}`;
   }
 
   async load(kit: KitId, model: string): Promise<LoadedModel> {
@@ -128,8 +133,10 @@ export class Assets {
     if (pending) return pending;
 
     this.queued++;
-    const p = this.gltf
-      .loadAsync(this.url(kit, model))
+    const loaded = kit === 'blocks'
+      ? this.fbx.loadAsync(this.url(kit, model)).then((scene) => ({ scene, animations: [] as AnimationClip[] }))
+      : this.gltf.loadAsync(this.url(kit, model));
+    const p = loaded
       .then((g) => {
         const scene = g.scene;
         scene.updateMatrixWorld(true);

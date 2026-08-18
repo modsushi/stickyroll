@@ -31,7 +31,14 @@ export interface ClusterItem {
   z: number;
   /** Yaw in radians, added to the cluster's rotation. */
   rot?: number;
-  scale?: number;
+  /** Fixed visual scale, or a random range for organic variation. */
+  scale?: number | [number, number];
+  /** Chance this accent appears in an individual arrangement. */
+  chance?: number;
+  /** Random offset in metres around the authored position. */
+  jitter?: number;
+  /** Give this item its own random yaw instead of following the arrangement. */
+  randomRotation?: boolean;
   /**
    * Height off the ground in metres, for stacking. A heap of junk reads as a
    * heap only if some of it sits *on* the rest; laid out flat it is just litter
@@ -53,15 +60,21 @@ export interface ClusterSpec {
   id: string;
   /** Tile types the cluster centre may land on. */
   on: TileChar[];
-  /** How many to place across the level. */
-  count: number;
+  /** How many to place across the level, or an inclusive random range. */
+  count: number | [number, number];
   /** Ground this cluster claims, in metres — keeps arrangements from merging. */
   radius: number;
   items: ClusterItem[];
+  /** Exact map tile for a one-off authored landmark rather than random placement. */
+  at?: [number, number];
+  /** Fixed yaw for an authored landmark. */
+  rot?: number;
   minFromStart?: number;
   maxFromStart?: number;
   /** Free yaw rather than quarter turns. Good for junk, bad for seating rows. */
   freeRotation?: boolean;
+  /** Only for arrangements made entirely from tier-0, starter-sized props. */
+  allowNearStart?: boolean;
 }
 
 /**
@@ -133,6 +146,24 @@ export interface BuildingSpec {
   scale?: number;
 }
 
+/** A small, physics-like decorative stack that tumbles apart when the ball hits it. */
+export interface BlockStackSpec {
+  /** Tile coordinate of the stack's base. */
+  at: [number, number];
+  /** Block-pack model ids, cycled through the stack. */
+  models: string[];
+  scale?: number;
+  /** A square pyramid with this many layers; omitted uses the small 3-2-1 tower. */
+  layers?: number;
+}
+
+/** A cheerful animated pet that decorates the level without blocking play. */
+export interface PetSpec {
+  at: [number, number];
+  model: string;
+  scale?: number;
+}
+
 export interface LevelDef {
   id: string;
   name: string;
@@ -162,6 +193,11 @@ export interface LevelDef {
   stars: [number, number, number];
   commercial: BuildingSpec;
   suburban: BuildingSpec;
+  /** Optional cute, breakable stacks made from the isometric block pack. */
+  blockStacks?: BlockStackSpec[];
+  pets?: PetSpec[];
+  /** Replaces ordinary pavement/grass with a cheerful gingham ground treatment. */
+  picnicGround?: boolean;
   /** Boundary wall + the skyline placed beyond it. */
   surround: SurroundSpec;
 }

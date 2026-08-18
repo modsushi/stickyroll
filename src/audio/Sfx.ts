@@ -99,6 +99,8 @@ class Sfx {
   private lastDemolish = 0;
   /** Same, for the quiet cue that marks a building as next. */
   private lastLock = 0;
+  /** Keeps repeated block-stack contacts from stacking into static. */
+  private lastBlocks = 0;
 
   /**
    * @param comboTier no longer changes pitch — only a little loudness and
@@ -545,6 +547,46 @@ class Sfx {
 
     o.start(t);
     o.stop(t + 0.4);
+  }
+
+  /** A bright toy-brick clatter with a soft floor thump. */
+  blocks(blocks = 6) {
+    const a = audio;
+    if (!a.ready) return;
+    const t = a.now;
+    if (t - this.lastBlocks < 0.12) return;
+    this.lastBlocks = t;
+    const count = Math.min(12, Math.max(1, blocks));
+    const amp = 0.19 + Math.min(6, count) * 0.012;
+
+    const thump = a.osc('triangle', 180, t);
+    thump.frequency.exponentialRampToValueAtTime(74, t + 0.18);
+    const tg = a.env(t, amp, 0.003, 0.2);
+    thump.connect(tg);
+    tg.connect(a.sfxBus);
+    thump.start(t);
+    thump.stop(t + 0.28);
+
+    // A handful of staggered woody clicks makes the stack read as separate
+    // blocks landing, rather than one generic collision noise.
+    for (let i = 0; i < count; i++) {
+      const at = t + 0.025 + i * 0.055;
+      const n = a.noise();
+      const f = a.filter('bandpass', 620 + (i % 4) * 210, 3.2);
+      const g = a.env(at, amp * (0.7 - i * 0.035), 0.001, 0.065);
+      n.connect(f);
+      f.connect(g);
+      g.connect(a.sfxBus);
+      n.start(at);
+      n.stop(at + 0.12);
+
+      const knock = a.osc('triangle', 310 - (i % 3) * 38, at);
+      const kg = a.env(at, amp * 0.18, 0.001, 0.045);
+      knock.connect(kg);
+      kg.connect(a.sfxBus);
+      knock.start(at);
+      knock.stop(at + 0.09);
+    }
   }
 
   /** Tier-up: riser, chord swell, sub thump, shimmer. The big moment. */

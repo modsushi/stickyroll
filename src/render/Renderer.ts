@@ -123,10 +123,10 @@ export class Renderer {
     this.scene.add(this.sky);
 
     this.scene.background = new Color(0x9ecbe2);
-    // Fog matched to the sky and pushed well beyond the play radius, so it
-    // reads as aerial haze on the skyline rather than a grey wall creeping up
-    // on the ball. Starting at 95 m was flattening the mid-distance.
-    this.scene.fog = new Fog(0xc4dfec, 130, 280);
+    // The level ends at a boundary wall, but the camera can look beyond it.
+    // Start the haze just outside the playable district so its continuation
+    // roads dissolve into sky instead of revealing an empty ground skirt.
+    this.scene.fog = new Fog(0xc4dfec, 58, 128);
   }
 
   /**

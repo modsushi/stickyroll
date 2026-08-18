@@ -125,6 +125,7 @@ bus.on('goldChange', () => boot.refresh());
 bus.on('collect', (e) => sfx.collect(e.slot));
 bus.on('collectComplete', () => sfx.fanfare());
 bus.on('timeUp', () => sfx.countdown(game.timeLeft <= 5));
+bus.on('blockCrumble', (e) => sfx.blocks(e.blocks));
 
 // ── particles react too ───────────────────────────────────────────────────
 bus.on('tierUp', (e) => {
