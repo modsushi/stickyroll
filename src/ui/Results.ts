@@ -19,6 +19,7 @@
 import { sfx } from '../audio/Sfx';
 import { save } from '../core/Save';
 import { bus, type GameEvents } from '../core/Events';
+import { levelById, LEVELS } from '../levels';
 import type { LevelDef } from '../levels/types';
 import { TIERS } from '../game/Growth';
 import { levelFromXp, MAX_LEVEL } from '../meta/Progression';
@@ -37,13 +38,20 @@ export class Results {
   private goldWrap: HTMLElement;
   private goldBtn: HTMLButtonElement;
   private actions: HTMLElement;
+  private nextBtn: HTMLButtonElement;
+  private nextEyebrow: HTMLElement;
+  private nextName: HTMLElement;
+  private unlockNote: HTMLElement;
   private token = 0;
+  /** Level the Next button leads to, or '' when this is the last one. */
+  private nextId = '';
 
   /** Gold earned this run and not yet banked. */
   private pendingGold = 0;
 
   onRetry: () => void = () => {};
   onLevels: () => void = () => {};
+  onNext: (levelId: string) => void = () => {};
   onCollection: () => void = () => {};
   onShop: () => void = () => {};
 
@@ -69,32 +77,55 @@ export class Results {
     this.goldWrap = el('div', { class: 'gold-wrap' });
     this.goldWrap.append(this.goldBtn);
 
-    this.actions = el('div', { class: 'row', style: 'opacity:0;transition:opacity .35s ease' });
-    const retry = el('button', { class: 'btn' }, 'Play Again');
-    retry.addEventListener('click', () => {
+    // The hook onward. A results screen whose loudest button replays the level
+    // you just finished is a dead end — the next map is the reason to keep
+    // going, so it takes the primary slot whenever there is one.
+    //
+    // It is built as a *destination*, not a label: the eyebrow names the slot
+    // you are being sent to ("Next · Level 2"), the big line names the place,
+    // and the chevron says which way. Reading the level's own name off the
+    // button is what turns "another one of these" into "the rail one".
+    this.unlockNote = el('div', { class: 'unlock-note' });
+    this.nextEyebrow = el('span', { class: 'eyebrow' }, '');
+    this.nextName = el('span', { class: 'name' }, '');
+    const nextText = el('span', { class: 'txt' });
+    nextText.append(this.nextEyebrow, this.nextName);
+    this.nextBtn = el('button', { class: 'btn next' }) as HTMLButtonElement;
+    this.nextBtn.append(
+      el('span', { class: 'ic' }, '🚀'),
+      nextText,
+      el('span', { class: 'chev' }, '›')
+    );
+    this.nextBtn.addEventListener('click', () => {
       sfx.click();
-      this.onRetry();
+      if (this.nextId) this.onNext(this.nextId);
     });
-    const levels = el('button', { class: 'btn ghost' }, 'Levels');
-    levels.addEventListener('click', () => {
-      sfx.click(true);
-      this.onLevels();
-    });
-    const shop = el('button', { class: 'btn ghost' }, 'Shop');
-    shop.addEventListener('click', () => {
-      sfx.click(true);
-      this.onShop();
-    });
-    const coll = el('button', { class: 'btn ghost' }, 'Collection');
-    coll.addEventListener('click', () => {
-      sfx.click(true);
-      this.onCollection();
-    });
-    this.actions.append(retry, levels, shop, coll);
+
+    // Secondary actions as chunky icon buttons rather than a row of words.
+    // Four text buttons at the bottom of a phone screen are four identical
+    // grey lozenges you have to *read*; an icon over a caption is recognised
+    // at a glance and, at this size, is a far bigger tap target.
+    this.actions = el('div', { class: 'action-grid', style: 'opacity:0;transition:opacity .35s ease' });
+    const action = (icon: string, label: string, onTap: () => void, soft = true) => {
+      const b = el('button', { class: 'act-btn', 'aria-label': label });
+      b.append(
+        el('span', { class: 'ic' }, icon),
+        el('span', { class: 'lb' }, label)
+      );
+      b.addEventListener('click', () => {
+        sfx.click(soft);
+        onTap();
+      });
+      this.actions.append(b);
+    };
+    action('🔁', 'Replay', () => this.onRetry(), false);
+    action('🗺️', 'Levels', () => this.onLevels());
+    action('🛒', 'Shop', () => this.onShop());
+    action('🧺', 'Collection', () => this.onCollection());
 
     this.root.append(
       this.title, this.starsEl, this.scoreEl, this.statsEl,
-      this.xpWrap, this.goldWrap, this.actions
+      this.xpWrap, this.goldWrap, this.unlockNote, this.nextBtn, this.actions
     );
     parent.append(this.root);
   }
@@ -111,6 +142,19 @@ export class Results {
     this.actions.style.opacity = '0';
     this.xpWrap.classList.remove('on');
     this.goldWrap.classList.remove('on');
+    this.nextBtn.classList.remove('on');
+    this.unlockNote.classList.remove('on');
+
+    this.nextId = e.next ?? '';
+    if (this.nextId) {
+      const target = levelById(this.nextId);
+      // 1-based position in play order — "Level 2" is where the player is being
+      // sent, which is a more useful promise than "the next one".
+      const slot = LEVELS.findIndex((l) => l.id === this.nextId) + 1;
+      this.nextEyebrow.textContent = `Next · Level ${slot}`;
+      this.nextName.textContent = target.name;
+      this.unlockNote.textContent = e.newlyUnlocked ? `${target.name} unlocked!` : '';
+    }
 
     this.starsEl.innerHTML = '';
     const starNodes = [0, 1, 2].map(() => {
@@ -163,6 +207,18 @@ export class Results {
     await this.playXp(run, e.xp);
     if (run !== this.token) return;
     await this.offerGold(run, e.gold);
+
+    if (run !== this.token) return;
+    // The hook lands *before* the secondary row, and a beat ahead of it, so the
+    // eye reaches the next level first and Play Again second.
+    if (this.nextId) {
+      await wait(120);
+      if (run !== this.token) return;
+      this.unlockNote.classList.add('on');
+      this.nextBtn.classList.add('on');
+      sfx.whoosh(false);
+      await wait(340);
+    }
 
     if (run !== this.token) return;
     await wait(120);

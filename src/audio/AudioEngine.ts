@@ -13,6 +13,21 @@
 import { clamp01 } from '../core/Math';
 import { save } from '../core/Save';
 
+/**
+ * How long to wait for `AudioContext.resume()` before giving up on it.
+ *
+ * On Chrome for Android that promise can stay pending *forever* — not reject,
+ * just never settle — when the context cannot take audio focus: another app
+ * holds it, a Bluetooth device is mid-connect, or the autoplay policy has not
+ * yet been satisfied to the browser's satisfaction. Desktop Chrome resolves it
+ * in microseconds and iOS Safari rejects promptly, which is why this only ever
+ * bit on Android.
+ *
+ * Nothing in the game may block on sound. A quarter of a second is far longer
+ * than a healthy resume needs and far shorter than a player would notice.
+ */
+const RESUME_TIMEOUT_MS = 250;
+
 export class AudioEngine {
   ctx: AudioContext | null = null;
   master!: GainNode;
@@ -23,11 +38,18 @@ export class AudioEngine {
   private sfxSend!: GainNode;
   private noiseBuf!: AudioBuffer;
   private started = false;
+  private retryArmed = false;
 
-  /** Resolves once the context is genuinely running (post user gesture). */
+  /**
+   * Builds the graph and asks the context to run.
+   *
+   * Resolves once the context is running *or* once we have waited long enough
+   * to stop caring — see `RESUME_TIMEOUT_MS`. It never rejects and it never
+   * hangs, because every caller is on a path the player is waiting on.
+   */
   async unlock(): Promise<void> {
     if (this.started) {
-      if (this.ctx?.state === 'suspended') await this.ctx.resume();
+      await this.tryResume();
       return;
     }
     const Ctor =
@@ -114,7 +136,44 @@ export class AudioEngine {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noiseBuf = buf;
 
-    if (ctx.state === 'suspended') await ctx.resume();
+    await this.tryResume();
+  }
+
+  /**
+   * Resumes the context without ever blocking on it. @see RESUME_TIMEOUT_MS
+   *
+   * A timed-out resume is not fatal: the context stays suspended and the next
+   * gesture tries again through `retryOnNextGesture`, so sound arrives late
+   * rather than never.
+   */
+  private tryResume(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === 'running') return Promise.resolve();
+    const resumed = ctx.resume().catch(() => {});
+    return Promise.race([
+      resumed,
+      new Promise<void>((done) => setTimeout(done, RESUME_TIMEOUT_MS)),
+    ]).then(() => {
+      if (this.ctx?.state !== 'running') this.retryOnNextGesture();
+    });
+  }
+
+  /**
+   * Android can hand back a context that is still suspended and only actually
+   * starts on a *later* gesture. Without this the game would run silently for
+   * the rest of the session having asked exactly once.
+   */
+  private retryOnNextGesture() {
+    if (this.retryArmed) return;
+    this.retryArmed = true;
+    const again = () => {
+      this.retryArmed = false;
+      removeEventListener('pointerdown', again);
+      removeEventListener('touchstart', again);
+      void this.tryResume();
+    };
+    addEventListener('pointerdown', again, { once: true, passive: true });
+    addEventListener('touchstart', again, { once: true, passive: true });
   }
 
   get ready() {

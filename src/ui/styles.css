@@ -227,22 +227,94 @@ html.no-ui #ui {
 
 /* ── boot ──────────────────────────────────────────────────────────────── */
 
+/*
+ * The start overlay sits *over the live district*, not in front of a menu.
+ *
+ * While the assets download there is nothing behind it worth seeing, so it is
+ * an opaque sky. `.live` — set the moment the city is built — swaps that for a
+ * soft top-and-bottom scrim: enough contrast for the logo and the instruction,
+ * transparent everywhere the map is. That reveal *is* the pitch, so it gets a
+ * slower transition than a UI fade would normally deserve.
+ */
 #boot {
   inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   background:
     radial-gradient(120% 90% at 50% 8%, #d3e6f0 0%, #a3c8dc 45%, #6e9db9 100%);
   z-index: 100;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.5s ease, background 0.9s ease;
   text-align: center;
-  padding: 24px;
+  padding: max(26px, var(--safe-t)) 24px max(30px, var(--safe-b));
+  cursor: pointer;
+  /* The whole surface is the start button. `#ui` is pointer-events: none so the
+     canvas stays draggable through the HUD, which means this has to opt back
+     in explicitly — the old boot screen never did, because only its buttons
+     were ever meant to be hit. */
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+#boot.live {
+  background:
+    linear-gradient(180deg, rgba(22, 62, 86, 0.55) 0%, rgba(22, 62, 86, 0) 34%),
+    linear-gradient(0deg, rgba(22, 62, 86, 0.5) 0%, rgba(22, 62, 86, 0) 26%);
 }
 #boot.gone {
   opacity: 0;
   pointer-events: none;
+}
+/* Top group is the purse + logo, bottom the prompt; the map shows between. */
+.boot-top,
+.boot-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.boot-bottom { gap: 10px; }
+
+/*
+ * Drag instruction and start gesture in one. The finger points at the map
+ * rather than at a button, because the map is what the next touch acts on.
+ */
+.start-prompt {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  animation: promptIn 0.5s var(--ease-pop) both 0.15s;
+}
+.start-prompt .finger {
+  font-family: system-ui, sans-serif;
+  font-size: clamp(38px, 11vw, 58px);
+  line-height: 0.86;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.4));
+  animation: pointBall 0.9s ease-in-out infinite alternate;
+}
+.start-prompt .lead {
+  font-size: clamp(15px, 4.4vw, 22px);
+  color: var(--white);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.start-prompt .tap {
+  font-size: clamp(10px, 2.8vw, 13px);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--gold);
+  opacity: 0.9;
+  margin-top: 0.5em;
+  animation: tapPulse 1.5s ease-in-out infinite;
+}
+@keyframes promptIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tapPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
 }
 
 .logo {
@@ -253,7 +325,7 @@ html.no-ui #ui {
   text-shadow:
     0 3px 0 #a35d05,
     0 6px 0 #6d3d03,
-    0 14px 30px rgba(28, 111, 156, 0.35);
+    0 14px 30px rgba(0, 0, 0, 0.5);
   animation: logoIn 0.8s var(--ease-pop) both;
 }
 .logo small {
@@ -261,9 +333,9 @@ html.no-ui #ui {
   font-size: 0.3em;
   letter-spacing: 0.4em;
   color: var(--white);
-  opacity: 0.75;
+  opacity: 0.85;
   margin-top: 0.9em;
-  text-shadow: none;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
 }
 @keyframes logoIn {
   from { transform: scale(0.7) translateY(20px); opacity: 0; }
@@ -294,6 +366,13 @@ html.no-ui #ui {
   letter-spacing: 0.16em;
   opacity: 0.62;
   text-transform: uppercase;
+}
+/* Over the district rather than over a flat sky: needs its own contrast. */
+#boot.live .boot-note {
+  opacity: 0.95;
+  color: var(--white);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
+  margin-top: 2px;
 }
 
 /* ── HUD ───────────────────────────────────────────────────────────────── */
@@ -347,6 +426,122 @@ html.no-ui #ui {
 #pause-btn {
   top: calc(var(--safe-t) + var(--pad));
   right: calc(var(--safe-r) + var(--pad));
+}
+
+/* Left of the menu button, sharing its row and its shape. */
+#shop-btn {
+  top: calc(var(--safe-t) + var(--pad));
+  right: calc(var(--safe-r) + var(--pad) + clamp(50px, 13vw, 66px));
+  font-size: clamp(17px, 4.6vw, 23px);
+}
+
+/*
+ * Power-up buttons.
+ *
+ * Bottom right, inside the arc a right thumb sweeps without regripping, and
+ * clear of the growth meter that runs along the bottom centre. Round and
+ * heavily bevelled on purpose: these are the only two controls in the run, and
+ * they should read as *buttons* from the corner of the eye while the player is
+ * watching the ball.
+ */
+.pu-bar {
+  bottom: calc(var(--safe-b) + var(--pad));
+  right: calc(var(--safe-r) + var(--pad));
+  display: flex;
+  flex-direction: column-reverse;
+  gap: clamp(10px, 2.6vw, 14px);
+  pointer-events: none;
+}
+.pu-slot {
+  position: relative;
+  pointer-events: auto;
+  cursor: pointer;
+  line-height: 0;
+}
+.pu-btn {
+  position: relative;
+  pointer-events: none;
+  cursor: pointer;
+  width: clamp(56px, 15vw, 72px);
+  height: clamp(56px, 15vw, 72px);
+  border: 3px solid var(--gold);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #b8dded 0%, var(--sky) 45%, var(--sky-deep) 100%);
+  color: var(--white);
+  display: grid;
+  place-items: center;
+  font: inherit;
+  overflow: hidden;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.4),
+    0 5px 0 rgba(0, 0, 0, 0.4),
+    0 10px 20px rgba(0, 0, 0, 0.42);
+  transition: transform 0.1s var(--ease-pop), filter 0.2s ease;
+}
+.pu-slot:active .pu-btn {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.4),
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    0 4px 10px rgba(0, 0, 0, 0.42);
+}
+.pu-btn .ic {
+  /* Positioned so it paints *above* the absolutely-positioned fill ring. An
+     unpositioned grid child loses to any positioned sibling regardless of DOM
+     order, which had the timer washing straight over the icon. */
+  position: relative;
+  z-index: 1;
+  font-family: system-ui, sans-serif;
+  font-size: clamp(24px, 6.6vw, 32px);
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+}
+/* Charge count, as a badge rather than a caption: it changes, and a number
+   that changes on the edge of a button is read without being looked at. */
+.pu-slot .n {
+  position: absolute;
+  right: -4px;
+  bottom: -2px;
+  min-width: 1.5em;
+  padding: 0.05em 0.28em;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe37a, var(--sun));
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font-size: clamp(11px, 2.9vw, 14px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  pointer-events: none;
+}
+/* Out of charges: dimmed, but still live — it is the route to buying more. */
+.pu-slot.empty .pu-btn {
+  filter: saturate(0.3) brightness(0.82);
+}
+.pu-slot.empty .n {
+  background: linear-gradient(180deg, #d8e6ee, #9fbccb);
+}
+/* Nothing left to grow into. Unlike `empty` this really is inert. */
+.pu-slot.spent .pu-btn {
+  filter: saturate(0.2) brightness(0.7);
+}
+/* The pull's remaining time, draining from the top down behind the icon. */
+.pu-btn .ring {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 226, 122, 0.62), rgba(255, 158, 46, 0.42));
+  transform: scaleY(0);
+  transform-origin: 50% 100%;
+  transition: transform 0.1s linear;
+  pointer-events: none;
+}
+.pu-slot.firing .pu-btn {
+  border-color: #fff;
+  animation: puPulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes puPulse {
+  from { box-shadow: inset 0 3px 0 rgba(255,255,255,.4), 0 5px 0 rgba(0,0,0,.4), 0 0 0 0 rgba(255, 214, 92, 0.6); }
+  to   { box-shadow: inset 0 3px 0 rgba(255,255,255,.4), 0 5px 0 rgba(0,0,0,.4), 0 0 26px 8px rgba(255, 214, 92, 0.55); }
 }
 
 /* collectible cards.
@@ -561,6 +756,60 @@ html.no-ui #ui {
   display: block;
   margin-top: 0.15em;
 }
+/*
+ * The victory lap.
+ *
+ * A pill under the score rather than a banner over the ball. The middle of the
+ * screen during a Roll Master finish is a blizzard of `+N ×5` popups and the
+ * tier-up banner, and a five-second message that has to survive all of that
+ * belongs in HUD chrome, not in the world. Reads as an extension of the timer,
+ * which is exactly what it is: the other clock now running.
+ */
+.finale {
+  top: calc(var(--safe-t) + var(--pad) + clamp(84px, 20vw, 108px));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.34em 1em;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe37a 0%, var(--gold) 55%, #f0921c 100%);
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.45);
+  color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px) scale(0.9);
+  transition: opacity 0.3s ease, transform 0.35s var(--ease-pop);
+}
+.finale.on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+.finale .k {
+  font-size: clamp(10px, 2.6vw, 13px);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.finale .v {
+  font-size: clamp(11px, 2.9vw, 15px);
+}
+.finale .n {
+  font-size: clamp(17px, 4.4vw, 23px);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.1em;
+  text-align: center;
+}
+.finale .n.beat {
+  animation: finaleBeat 0.42s var(--ease-pop);
+}
+@keyframes finaleBeat {
+  0% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
 @keyframes bannerIn {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
   16% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
@@ -1060,11 +1309,15 @@ html.no-ui #ui {
   100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) * -0.35)) scale(0.7); opacity: 0; }
 }
 
-/* A button that wants attention — the Rewards button with a claim waiting. */
+/*
+ * A button that wants attention — the Rewards button with a claim waiting, and
+ * the HUD menu button that is now the only way to reach it.
+ */
 .btn.nudge {
   animation: nudge 1.6s ease-in-out infinite;
   position: relative;
 }
+.icon-btn.nudge::after,
 .btn.nudge::after {
   content: '';
   position: absolute;
@@ -1082,12 +1335,156 @@ html.no-ui #ui {
   50% { transform: translateY(-4px); }
 }
 
-.boot-menu {
-  margin-top: -8px;
-}
-
 #boot .purse {
   margin-bottom: 4px;
+}
+
+/*
+ * The hook onward, revealed after the gold and a beat ahead of the secondary
+ * row so the eye lands on the next level before it lands on Replay.
+ */
+.unlock-note,
+.btn.next {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.35s var(--ease-out), transform 0.35s var(--ease-out);
+}
+.unlock-note.on,
+.btn.next.on {
+  opacity: 1;
+  transform: none;
+}
+.unlock-note {
+  font-size: clamp(11px, 2.9vw, 14px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: -6px;
+  animation: unlockPop 0.5s var(--ease-pop) both;
+}
+@keyframes unlockPop {
+  from { transform: scale(0.7); }
+  to { transform: none; }
+}
+
+/*
+ * The next-level button: a wide gold slab with a deep bevel, an icon, two
+ * lines of text and a chevron. It is the biggest, brightest, most obviously
+ * pressable thing on the screen, which is the entire point — everything above
+ * it is a report on a run that is over.
+ */
+.btn.next {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 3vw, 16px);
+  width: min(88vw, 430px);
+  padding: clamp(12px, 3vw, 16px) clamp(16px, 4vw, 22px);
+  text-align: left;
+  border-radius: 22px;
+  animation: nextBreathe 1.9s ease-in-out infinite;
+}
+.btn.next .ic {
+  font-family: system-ui, sans-serif;
+  font-size: clamp(26px, 7vw, 34px);
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
+}
+.btn.next .txt {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.btn.next .eyebrow {
+  font-size: clamp(10px, 2.6vw, 12px);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.btn.next .name {
+  font-size: clamp(18px, 5vw, 26px);
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.btn.next .chev {
+  font-size: clamp(30px, 8vw, 40px);
+  line-height: 0.7;
+  opacity: 0.8;
+  animation: chevNudge 1.1s ease-in-out infinite alternate;
+}
+@keyframes chevNudge {
+  from { transform: translateX(0); }
+  to { transform: translateX(5px); }
+}
+/* A slow swell rather than a bounce: this sits under a results screen someone
+   is reading, and a button that jumps around while you read is a nag. */
+@keyframes nextBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.022); }
+}
+/* Hidden outright when there is no next level, so it leaves no gap behind. */
+.unlock-note:empty { display: none; }
+.btn.next:not(.on) { pointer-events: none; }
+
+/*
+ * Secondary actions: icon over caption, four across.
+ *
+ * The row of four text buttons this replaces was four identical lozenges that
+ * had to be read one at a time. An icon is recognised without reading, the
+ * caption underneath removes any doubt, and the whole tile is a far larger tap
+ * target than a word was.
+ */
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: clamp(8px, 2.4vw, 14px);
+  width: min(88vw, 430px);
+}
+.act-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: clamp(9px, 2.4vw, 13px) 3px clamp(7px, 2vw, 10px);
+  border: 3px solid var(--gold);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #b8dded 0%, var(--sky) 45%, var(--sky-deep) 100%);
+  color: var(--white);
+  font: inherit;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.35),
+    0 5px 0 rgba(0, 0, 0, 0.38),
+    0 9px 18px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s var(--ease-pop);
+}
+.act-btn:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.35),
+    0 1px 0 rgba(0, 0, 0, 0.38),
+    0 3px 8px rgba(0, 0, 0, 0.35);
+}
+.act-btn .ic {
+  font-family: system-ui, sans-serif;
+  font-size: clamp(20px, 5.6vw, 27px);
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
+}
+.act-btn .lb {
+  /* Tight tracking and a small ceiling because "Collection" has to fit a
+     quarter-width tile at 320 px without wrapping or spilling its border. */
+  font-size: clamp(8px, 2vw, 10px);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.9;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── results: xp bar and gold claim ────────────────────────────────────── */
@@ -1330,6 +1727,55 @@ html.no-ui #ui {
   gap: clamp(10px, 3vw, 20px);
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* Tab bar. Power-ups first — see the note at the top of `Shop.ts`. */
+.shop-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(12, 40, 58, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+}
+.shop-tab {
+  pointer-events: auto;
+  cursor: pointer;
+  border: none;
+  border-radius: 999px;
+  padding: 0.42em 1.15em;
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-size: clamp(12px, 3.1vw, 15px);
+  opacity: 0.62;
+  transition: background 0.18s ease, opacity 0.18s ease;
+}
+.shop-tab.on {
+  opacity: 1;
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffe37a, var(--gold));
+  box-shadow: 0 2px 0 var(--sun-deep);
+}
+
+/* Two big tiles rather than a dense grid: there are only ever a handful of
+   consumables and each one needs its icon read, not scanned past. */
+.shop-grid.powerups {
+  grid-template-columns: repeat(auto-fill, minmax(clamp(130px, 38vw, 180px), 1fr));
+}
+.pu-tile {
+  background: radial-gradient(120% 100% at 50% 0%, #6fb5d8, #2c6a90);
+  padding: 14px 8px 8px;
+  gap: 8px;
+}
+.pu-tile .pu-art {
+  font-family: system-ui, sans-serif;
+  font-size: clamp(38px, 11vw, 54px);
+  line-height: 1;
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.42));
+}
+.pu-tile .st-name {
+  font-size: clamp(11px, 2.9vw, 14px);
 }
 
 .shop-grid {

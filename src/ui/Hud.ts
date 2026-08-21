@@ -16,6 +16,8 @@ import { bus } from '../core/Events';
 import { clamp01, easeInCubic, easeOutCubic, lerp } from '../core/Math';
 import { TIERS } from '../game/Growth';
 import type { Game } from '../game/Game';
+import { chargesOf, POWERUPS } from '../meta/Powerups';
+import { DailyReward } from './DailyReward';
 import { el } from './dom';
 
 const _v = new Vector3();
@@ -55,10 +57,17 @@ export class Hud {
   private comboCount!: HTMLElement;
   private comboRing: HTMLElement;
   private banner: HTMLElement;
+  private finale: HTMLElement;
+  private finaleN: HTMLElement;
   private layer: HTMLElement;
   private stick: HTMLElement;
   private stickBase: HTMLElement;
   private stickKnob: HTMLElement;
+  private pauseBtn!: HTMLButtonElement;
+  private shopBtn!: HTMLButtonElement;
+  private puBar!: HTMLElement;
+  /** Power-up buttons and their charge badges, keyed by power-up id. */
+  private puBtns = new Map<string, { root: HTMLElement; count: HTMLElement; ring: HTMLElement }>();
 
   private pops: Pop[] = [];
   private popPool: HTMLElement[] = [];
@@ -119,6 +128,19 @@ export class Hud {
 
     // ── banner + popup layer ──
     this.banner = el('div', { class: 'banner' });
+
+    // ── victory lap ──
+    // The run ends a few seconds after the top tier, and an unexplained cut to
+    // the results screen reads as a bug. This says what is happening and counts
+    // it down, so the last seconds are a lap of honour rather than a surprise.
+    this.finale = el('div', { class: 'finale' });
+    this.finaleN = el('span', { class: 'n' }, '5');
+    this.finale.append(
+      el('span', { class: 'k' }, 'Roll Master'),
+      el('span', { class: 'v' }, 'Finishing in'),
+      this.finaleN
+    );
+
     this.layer = el('div', { style: 'position:absolute;inset:0;pointer-events:none' });
 
     // ── virtual stick ──
@@ -127,15 +149,49 @@ export class Hud {
     this.stickKnob = el('div', { class: 'knob' });
     this.stick.append(this.stickBase, this.stickKnob);
 
-    const pauseBtn = el('button', { class: 'icon-btn', id: 'pause-btn', 'aria-label': 'Pause' }, '❚❚');
-    pauseBtn.addEventListener('click', () => {
+    // The menu button. It wears the unclaimed-daily dot itself, because a nudge
+    // you can only see *after* opening the menu is not a nudge.
+    this.pauseBtn = el('button', { class: 'icon-btn', id: 'pause-btn', 'aria-label': 'Menu' }, '❚❚') as HTMLButtonElement;
+    this.pauseBtn.addEventListener('click', () => {
       sfx.click();
       bus.emit('pauseRequest', undefined as never);
     });
 
+    // The shop, one tap from the run. Power-ups are bought with gold and spent
+    // mid-run, so burying the till two menus deep would mean running out of
+    // magnets and simply never buying more.
+    this.shopBtn = el('button', { class: 'icon-btn', id: 'shop-btn', 'aria-label': 'Shop' }, '🛒') as HTMLButtonElement;
+    this.shopBtn.addEventListener('click', () => {
+      sfx.click();
+      bus.emit('shopRequest', undefined as never);
+    });
+
+    // ── power-up buttons ──
+    // Bottom right, in the thumb's arc on a phone, and well clear of the growth
+    // meter along the bottom edge. Each carries its own charge count, because
+    // "how many magnets do I have" is a question the player asks *while* deciding
+    // whether to spend one.
+    const puBar = el('div', { class: 'pu-bar' });
+    for (const def of POWERUPS) {
+      // The button clips its own fill ring, so the charge badge has to live
+      // outside it — hence the wrapper. The badge is pointer-transparent so the
+      // whole slot still behaves as one target.
+      const slot = el('div', { class: 'pu-slot' });
+      const btn = el('button', { class: 'pu-btn', 'aria-label': def.name }) as HTMLButtonElement;
+      const ring = el('i', { class: 'ring' });
+      const count = el('span', { class: 'n' }, '0');
+      btn.append(ring, el('span', { class: 'ic' }, def.icon));
+      slot.append(btn, count);
+      slot.addEventListener('click', () => bus.emit('powerupRequest', { id: def.id }));
+      puBar.append(slot);
+      this.puBtns.set(def.id, { root: slot, count, ring });
+    }
+    this.puBar = puBar;
+
     this.root.append(
       this.timerEl, this.scoreEl, cards, tiers, this.tierName, growth,
-      this.comboEl, this.banner, this.layer, this.stick, pauseBtn
+      this.comboEl, this.banner, this.finale, this.layer, this.stick,
+      this.pauseBtn, this.shopBtn, this.puBar
     );
     parent.append(this.root);
 
@@ -172,8 +228,41 @@ export class Hud {
       bus.on('tierUp', (e) => {
         this.showBanner(TIERS[e.tier].name);
         this.tierName.textContent = TIERS[e.tier].name;
+      }),
+      bus.on('finaleStart', (e) => {
+        this.finaleN.textContent = String(Math.ceil(e.seconds));
+        this.finale.classList.add('on');
+      }),
+      bus.on('powerupUsed', () => this.paintPowerups()),
+      bus.on('powerupChange', () => this.paintPowerups()),
+      bus.on('finaleTick', (e) => {
+        const secs = Math.max(1, Math.ceil(e.secondsLeft));
+        if (this.finaleN.textContent === String(secs)) return;
+        this.finaleN.textContent = String(secs);
+        this.finaleN.classList.remove('beat');
+        void this.finaleN.offsetWidth;
+        this.finaleN.classList.add('beat');
+        sfx.tick(1.5 + (5 - secs) * 0.18);
       })
     );
+  }
+
+  /**
+   * Repaints charge counts.
+   *
+   * An empty button is dimmed but stays live and swaps its count for a `+`: it
+   * is the shortest path to buying more, and a button that greys out and stops
+   * responding teaches the player that the feature is over rather than that it
+   * is for sale.
+   */
+  private paintPowerups() {
+    for (const def of POWERUPS) {
+      const ui = this.puBtns.get(def.id);
+      if (!ui) continue;
+      const n = chargesOf(def.id);
+      ui.count.textContent = n > 0 ? String(n) : '+';
+      ui.root.classList.toggle('empty', n <= 0);
+    }
   }
 
   private showBanner(name: string) {
@@ -253,6 +342,19 @@ export class Hud {
 
     // ── combo ring drains with the window ──
     this.comboRing.style.transform = `scaleX(${g.score.comboFraction})`;
+
+    // ── magnet button: its ring drains while the pull is running ──
+    const magnet = g.magnetState();
+    const magnetUi = this.puBtns.get('magnet');
+    if (magnetUi) {
+      magnetUi.root.classList.toggle('firing', magnet.active);
+      magnetUi.ring.style.transform = `scaleY(${magnet.progress})`;
+    }
+
+    // Size Up is refused at the top tier, so the button says so rather than
+    // taking a tap and doing nothing.
+    const growUi = this.puBtns.get('grow');
+    if (growUi) growUi.root.classList.toggle('spent', g.ball.growth.isMax);
 
     // ── stick ──
     const st = (g as unknown as { inputStick?: never }) && this.stickState();
@@ -361,6 +463,7 @@ export class Hud {
    * makes the new level look already-won.
    */
   reset() {
+    this.paintPowerups();
     this.shownScore = 0;
     this.scoreEl.textContent = '0';
     this.game.level.collectibles.forEach((c, i) => {
@@ -371,6 +474,7 @@ export class Hud {
     this.comboN.textContent = 'x1';
     this.comboCount.textContent = '0 chain';
     this.banner.classList.remove('show');
+    this.finale.classList.remove('on');
     this.tierName.textContent = TIERS[0].name;
     for (const p of this.pops) p.node.remove();
     this.pops.length = 0;
@@ -380,6 +484,7 @@ export class Hud {
 
   show(on: boolean) {
     this.root.classList.toggle('on', on);
+    if (on) this.pauseBtn.classList.toggle('nudge', DailyReward.pending);
   }
 
   dispose() {

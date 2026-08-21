@@ -32,6 +32,14 @@ export function detectQuality(): Quality {
 export const isTouchDevice = () =>
   typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
+/**
+ * Metres of clear air beyond the ball before the haze starts, and the depth of
+ * the band it fades across. Tuned at the opening framing, then held constant
+ * for every framing above it.
+ */
+const FOG_LEAD = 34;
+const FOG_SPAN = 70;
+
 export class Renderer {
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
@@ -46,6 +54,8 @@ export class Renderer {
   private slowFrames = 0;
   /** Alternates so the shadow map refreshes every other frame. */
   private shadowPhase = 0;
+  /** Atmospheric haze; refitted to the framing each frame by `fitFog`. */
+  private fog: Fog;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality) {
     this.quality = quality;
@@ -126,7 +136,36 @@ export class Renderer {
     // The level ends at a boundary wall, but the camera can look beyond it.
     // Start the haze just outside the playable district so its continuation
     // roads dissolve into sky instead of revealing an empty ground skirt.
-    this.scene.fog = new Fog(0xc4dfec, 58, 128);
+    // Seeded at the opening framing and refitted every frame once a run is
+    // under way — see `fitFog`. The seed matters because the menu renders the
+    // scene before any level does.
+    this.fog = new Fog(0xc4dfec, 58, 128);
+    this.scene.fog = this.fog;
+  }
+
+  /**
+   * Anchors the haze to the *ball*, not to the lens.
+   *
+   * Fog distances are measured from the camera, and this camera pulls a long
+   * way back as the ball grows: ~21 m from its focus at pebble size and ~67 m
+   * at Roll Master, and a phone frames looser again — 24 m and 75 m. Against
+   * a fixed 58-128 m band that put the ball *itself* a quarter of the way into
+   * the haze at the top tier and everything around it further still — so the
+   * payoff of a whole run was played through a grey wash, with the city, the
+   * trains and the demolition dust all muddied into the sky colour. Phones got
+   * it worst, which is where it was reported.
+   *
+   * Keeping the band a constant distance *behind* the focus point instead
+   * gives every tier the same picture: the district around the ball reads
+   * clean, and the haze still does its real job of dissolving the world's edge
+   * into the sky. At the opening framing they land within a few metres of the
+   * old 58-128 m; they only move once the camera does.
+   */
+  fitFog(viewDistance: number) {
+    const near = viewDistance + FOG_LEAD;
+    if (Math.abs(near - this.fog.near) < 0.05) return;
+    this.fog.near = near;
+    this.fog.far = near + FOG_SPAN;
   }
 
   /**

@@ -108,6 +108,23 @@ export type Voice = 'tiny' | 'wood' | 'metal' | 'soft' | 'heavy' | 'human' | 'ca
  */
 export const isBuilding = (def: PropSpec) => def.voice === 'building';
 
+/**
+ * Things that are planted, bolted down or growing out of the ground.
+ *
+ * Only the Magnetic Pull power-up cares. Dragging litter across a plaza reads
+ * as a magnet; dragging an oak tree, a lamp post and a highway sign along with
+ * it reads as a bug — those objects have visible foundations, and the whole
+ * effect is sold by what it *doesn't* move. They stay perfectly edible by
+ * rolling over them, which is how you were always meant to get them.
+ */
+const ROOTED = new Set([
+  'tree-small', 'tree-large', 'planter', 'potted-plant',
+  'street-light', 'sign-highway', 'market-fence', 'parasol', 'parasol-b',
+]);
+
+/** @see ROOTED */
+export const isRooted = (def: PropSpec) => ROOTED.has(def.id);
+
 /** Memoised by `minBuildingSize`; cleared whenever the catalog is resolved. */
 let _minBuilding = -1;
 

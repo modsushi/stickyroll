@@ -31,6 +31,16 @@ export interface MetaData {
   runs: number;
   /** Lifetime gold earned, for the shop header. */
   earned: number;
+  /**
+   * powerupId -> charges in hand.
+   *
+   * An *absent* key means "never granted", which `meta/Powerups` reads as the
+   * free opening charges. Storing the grant here instead would mean this module
+   * importing the power-up catalogue, and that catalogue already imports this
+   * one — a cycle whose evaluation order decides whether a `const` is
+   * initialised before it is read.
+   */
+  powerups: Record<string, number>;
 }
 
 export interface SaveData {
@@ -69,13 +79,14 @@ const freshMeta = (): MetaData => ({
   streak: 0,
   runs: 0,
   earned: 0,
+  powerups: {},
 });
 
 const fresh = (): SaveData => ({
   version: 2,
   collection: {},
   levels: {},
-  unlockedLevels: ['intro-01'],
+  unlockedLevels: ['downtown-01'],
   tutorials: {},
   settings: { music: 0.7, sfx: 0.85, quality: 'auto', haptics: true },
   totalAbsorbed: 0,
@@ -98,25 +109,37 @@ function read(): SaveData {
     // default from `fresh()` for a save written before it existed — which is
     // why new settings do not need a version bump, only additive ones.
     const base = fresh();
+    // The opening level is always available, whatever the save says — it moved
+    // from Pocket Park to Downtown when the order changed, and a save written
+    // before that would otherwise have nothing unlocked at all. Everything the
+    // player had stays: this only ever adds.
     const unlocked = Array.isArray(parsed.unlockedLevels)
-      ? [...new Set(['intro-01', ...parsed.unlockedLevels])]
-      : ['intro-01', 'downtown-01'];
+      ? [...new Set(['downtown-01', ...parsed.unlockedLevels])]
+      : ['downtown-01', 'intro-01'];
     // Existing players who already earned a Downtown star should not have to
     // replay it merely because Rail City shipped after their save was written.
     if ((parsed.levels?.['downtown-01']?.stars ?? 0) > 0 && !unlocked.includes('rail-city-01')) {
       unlocked.push('rail-city-01');
     }
+    // Same courtesy in the other direction: Pocket Park used to be the level
+    // everyone started on, so anyone who has ever scored on it keeps it.
+    if (parsed.levels?.['intro-01'] && !unlocked.includes('intro-01')) unlocked.push('intro-01');
 
     return {
       ...base,
       ...parsed,
       version: 2,
       settings: { ...base.settings, ...parsed.settings },
-      // Existing players already had Downtown as their only option, so never
-      // make an update appear to take content away from them.
+      // Never let an update appear to take content away from a returning
+      // player: `unlocked` is a superset of whatever they had.
       unlockedLevels: unlocked,
       tutorials: { ...base.tutorials, ...parsed.tutorials },
-      meta: { ...base.meta, ...parsed.meta, skins: dedupeSkins(parsed.meta?.skins) },
+      meta: {
+        ...base.meta,
+        ...parsed.meta,
+        skins: dedupeSkins(parsed.meta?.skins),
+        powerups: { ...parsed.meta?.powerups },
+      },
     };
   } catch {
     return fresh();
@@ -242,6 +265,11 @@ class SaveStore {
 
   countRun() {
     this.data.meta.runs++;
+    this.flush();
+  }
+
+  setCharges(powerupId: string, n: number) {
+    this.data.meta.powerups[powerupId] = Math.max(0, Math.round(n));
     this.flush();
   }
 

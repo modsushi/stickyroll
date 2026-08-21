@@ -44,6 +44,14 @@ export interface GameEvents {
   blockCrumble: { blocks: number };
   /** Growth crossed a tier boundary. */
   tierUp: { tier: number; radius: number; prevRadius: number };
+  /**
+   * The ball reached the top tier, so the run is on its victory lap and will
+   * finish in `seconds`. Announced separately from `tierUp` because it is a
+   * different message: the first says you grew, this one says you won.
+   */
+  finaleStart: { seconds: number };
+  /** Victory-lap countdown, once per simulation step while it runs. */
+  finaleTick: { secondsLeft: number };
   /** A level collectible was picked up. */
   collect: { slot: 0 | 1; kind: string; count: number; target: number };
   /** All of one collectible set was gathered. */
@@ -58,12 +66,27 @@ export interface GameEvents {
   rewardOffer: void;
   /** A permanent upgrade was taken, so anything showing perks should refresh. */
   upgradeTaken: { id: string; rank: number };
+  /** A consumable power-up fired. The HUD repaints its charge count off this. */
+  powerupUsed: { id: string };
+  /**
+   * The player pressed a power-up button. A request, not a fact — the screen
+   * flow decides whether it fires, or whether an empty one opens the shop.
+   */
+  powerupRequest: { id: string };
+  /** The player pressed the in-run shop button. */
+  shopRequest: void;
+  /** Charges changed for some other reason — a purchase, or a fresh run. */
+  powerupChange: void;
   /** Gold balance changed — spent, earned or claimed. */
   goldChange: { gold: number; delta: number };
   /** Level ended; payload feeds the results screen. */
   levelEnd: {
     /** True when the level's clear objective was met before time expired. */
     completed: boolean;
+    /** Id of the next level in play order, when it is unlocked and playable. */
+    next?: string;
+    /** True when *this* run is what unlocked it — worth a line on the screen. */
+    newlyUnlocked: boolean;
     score: number;
     stars: number;
     bestCombo: number;

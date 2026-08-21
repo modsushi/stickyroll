@@ -1,42 +1,109 @@
 /**
- * Rail City Rush — a lively 40x40 city district encircled by working trains.
+ * Rail City Rush — a 36x36 city district encircled by working trains.
  *
  * The railway occupies a protected three-tile promenade just inside the wall.
  * Two smooth parallel loops keep the commuter, freight and tram traffic apart,
  * while four road axes cross the tracks and feed a familiar downtown grid.
- * The centre stays open and starter-dense; progressively heavier districts sit
- * further out, so the visual spectacle never comes at the cost of a fair run.
+ *
+ * ## Why the district is smaller than the railway suggests
+ *
+ * The first version was 40x40 with nine 8x8 blocks — 576 tiles of content, half
+ * again as much as `downtown-01` has, over a district 24 m wider. The ball
+ * reached Roll Master with well over a third of the map untouched, and a top
+ * tier spent mopping up is the one part of a run with no beat to it: nothing
+ * left can tier you up, so the last stretch is scenery.
+ *
+ * So the grid was rebuilt around the *centre* rather than around the wall. The
+ * plaza block stays 8x8 — it is the opening, and the tram runs around it — and
+ * the eight outer blocks dropped to 6x6, which is 372 tiles of content instead
+ * of 576. Per tile the district is as dense as Downtown; there is simply less
+ * filler between the parts worth rolling to, and the belt, the promenade and
+ * the station approaches are untouched, so it still reads as the big one.
+ *
+ * The effect on pacing is the whole point. Roughly 30,000 units of mass are
+ * reachable below the top tier and Roll Master costs 12,000, so it now lands
+ * around 40% of the way through the district rather than 20% — late enough to
+ * be the run's climax, with the frontages as the payoff rather than the filler.
+ *
+ * ## Where the buildings went
+ *
+ * Same reasoning applied to frontages. Buildings are top-tier food, so a
+ * district lined with them is a district you finish by driving down streets
+ * eating walls. Half the outer blocks now carry a frontage on one edge only,
+ * and every edge is two tiles shorter than it was: thirty-nine buildings
+ * against the old sixty-four. The skyline beyond the wall makes the horizon
+ * look like a city, at no cost to the run.
+ *
+ * Frontages still hug each block's **west and south** edges only — the far side
+ * from a fixed camera sitting south-west of the ball. See `downtown-01` for why.
  */
 
 import type { LevelDef, TileChar } from './types';
 
-const SIZE = 40;
-const ROADS = [6, 15, 24, 33] as const;
+const SIZE = 36;
+
+/**
+ * Road axes. The outer pair sit one tile inside the rail belt, and the inner
+ * pair are spread wide enough to leave an 8x8 civic block in the middle for the
+ * plaza and its tram loop. Everything else is mirrored about the centre, so a
+ * coordinate's opposite number is always `SIZE - 1 - c`.
+ */
+const ROADS = [6, 13, 22, 29] as const;
+const MIRROR = SIZE - 1;
+
+/** Rail belt rows/columns, protected from scatter so nothing sits on a track. */
+const RAILS = [2, 3, 4, SIZE - 5, SIZE - 4, SIZE - 3];
 
 interface District {
   ground: TileChar;
   buildings?: 'B' | 'H';
+  /**
+   * Which street edges carry a frontage. Blocks lined on both edges read as a
+   * proper commercial corner; blocks lined on one stay open and let the park or
+   * market inside them be seen from the street.
+   */
+  edges?: ('west' | 'south')[];
 }
 
+/**
+ * The nine blocks, north row first. Two markets and two cafe terraces face the
+ * streets that carry the frontages; the four parks and the plaza are what the
+ * gaps in those frontages look through onto.
+ */
 const DISTRICTS: District[][] = [
   [
-    { ground: '.', buildings: 'H' },
-    { ground: 'M', buildings: 'B' },
-    { ground: 'C', buildings: 'B' },
+    { ground: '.', buildings: 'H', edges: ['west'] },
+    { ground: 'M', buildings: 'B', edges: ['west', 'south'] },
+    { ground: 'C', buildings: 'B', edges: ['west', 'south'] },
   ],
   [
-    { ground: 'C', buildings: 'B' },
+    { ground: 'C', buildings: 'B', edges: ['west'] },
     { ground: 'P' },
-    { ground: '.', buildings: 'H' },
+    { ground: '.', buildings: 'H', edges: ['south'] },
   ],
   [
-    { ground: '.', buildings: 'H' },
-    { ground: 'C', buildings: 'B' },
-    { ground: '.', buildings: 'H' },
+    { ground: '.', buildings: 'H', edges: ['west'] },
+    { ground: 'M', buildings: 'B', edges: ['west', 'south'] },
+    { ground: '.', buildings: 'H', edges: ['west', 'south'] },
   ],
 ];
 
-/** Build the legible city grid without hand-maintaining forty 40-char rows. */
+/**
+ * Oak anchors, in tight clumps of three rather than dotted about.
+ *
+ * `T` scatters singles at just over one tree a tile, so adjacent anchors grow
+ * into a copse and isolated ones grow into a lone tree — and a lone tree is a
+ * lone collectible, which is the thing this set is not supposed to be. Four
+ * copses, one per park block, kept clear of the frontage rows.
+ */
+const GROVES: [number, number][] = [
+  [9, 8], [10, 8], [9, 9],
+  [26, 16], [27, 16], [26, 17],
+  [9, 26], [10, 26], [9, 27],
+  [26, 26], [27, 26], [26, 27],
+];
+
+/** Build the legible city grid without hand-maintaining thirty-six rows. */
 function makeMap(): string[] {
   const map: TileChar[][] = Array.from({ length: SIZE }, () =>
     Array<TileChar>(SIZE).fill(',')
@@ -45,14 +112,12 @@ function makeMap(): string[] {
   // Protected twin-track belt. Roads are painted afterwards and therefore cut
   // clean level crossings through it rather than stopping at the railway.
   for (let i = 0; i < SIZE; i++) {
-    for (const rail of [2, 3, 4, SIZE - 5, SIZE - 4, SIZE - 3]) {
+    for (const rail of RAILS) {
       map[rail][i] = 'R';
       map[i][rail] = 'R';
     }
   }
 
-  // Nine distinct blocks. Buildings occupy the west and south street edges,
-  // leaving their north-east interiors visible from the gameplay camera.
   for (let by = 0; by < 3; by++) {
     for (let bx = 0; bx < 3; bx++) {
       const x0 = ROADS[bx] + 1;
@@ -65,30 +130,27 @@ function makeMap(): string[] {
         for (let x = x0; x <= x1; x++) map[y][x] = district.ground;
       }
 
-      if (district.buildings) {
-        for (let y = y0; y <= y1; y += 2) map[y][x0] = district.buildings;
-        for (let x = x0; x <= x1; x += 2) map[y1][x] = district.buildings;
+      // Every other tile, so the frontage reads as a street of separate
+      // premises with gaps you can see the block through, rather than a wall.
+      for (const edge of district.buildings ? district.edges ?? [] : []) {
+        if (edge === 'west') for (let y = y0; y <= y1; y += 2) map[y][x0] = district.buildings!;
+        else for (let x = x0; x <= x1; x += 2) map[y1][x] = district.buildings!;
       }
     }
   }
 
   // Authored tree-grove anchors keep the parks varied rather than uniformly
   // sprinkled. Ordinary park scatter and bench arrangements fill around them.
-  for (const [x, y] of [
-    [10, 9], [13, 11], [27, 18], [30, 20], [10, 27],
-    [12, 30], [27, 27], [30, 29], [28, 31],
-  ] as [number, number][]) {
-    if (map[y][x] === '.') map[y][x] = 'T';
-  }
+  for (const [x, y] of GROVES) if (map[y][x] === '.') map[y][x] = 'T';
 
   // The city tram circles the civic plaza, visible from the very first frame.
   // Reserving its one-tile belt prevents starter props and pedestrians from
   // spawning on the rails while leaving a generous 6x6 feeding plaza inside.
-  for (let i = 16; i <= 23; i++) {
-    map[16][i] = 'R';
-    map[23][i] = 'R';
-    map[i][16] = 'R';
-    map[i][23] = 'R';
+  for (let i = 14; i <= 21; i++) {
+    map[14][i] = 'R';
+    map[21][i] = 'R';
+    map[i][14] = 'R';
+    map[i][21] = 'R';
   }
 
   for (const road of ROADS) {
@@ -122,10 +184,12 @@ export const RAIL_CITY: LevelDef = {
   id: 'rail-city-01',
   name: 'Rail City Rush',
   subtitle: 'Rule the rails and roll up the rush hour',
-  time: 210,
+  // Trimmed with the district. The old 210 s were budgeted against a map a
+  // third larger; on this one they left the last stretch with nothing to do.
+  time: 195,
   tileSize: 4,
   map: makeMap(),
-  start: [19, 19],
+  start: [17, 17],
 
   scatter: [
     // A generous opening feed in the central plaza. It is dense, but its small
@@ -137,36 +201,38 @@ export const RAIL_CITY: LevelDef = {
       maxFromStart: 22,
       scale: [0.82, 1.18],
     },
-    { props: ['road-cone', 'cone', 'barrier-small'], on: ['#'], density: 0.075, clump: 2.8 },
-    { props: ['tree-small', 'planter'], on: ['.'], density: 0.38, clump: 0.7, scale: [0.88, 1.14] },
-    { props: ['tree-large'], on: ['T'], density: 1.45, scale: [0.9, 1.18] },
-    { props: ['street-light'], on: [','], density: 0.022, minFromStart: 25 },
+    // Loose road cones stay off the carriageway: `cone` is a collection set now
+    // and it is supposed to be found in the roadworks below, in handfuls.
+    { props: ['barrier-small', 'cone-flat'], on: ['#'], density: 0.06, clump: 2.8 },
+    { props: ['tree-small', 'planter'], on: ['.'], density: 0.34, clump: 0.7, scale: [0.88, 1.14] },
+    { props: ['tree-large'], on: ['T'], density: 1.3, scale: [0.9, 1.18] },
+    { props: ['street-light'], on: [','], density: 0.02, minFromStart: 25 },
     {
       props: ['sedan', 'taxi', 'suv', 'hatchback', 'van', 'police'],
       on: [','],
-      density: 0.085,
+      density: 0.075,
       minFromStart: 20,
     },
-    { props: ['kart'], on: [','], density: 0.032, minFromStart: 24 },
-    { props: ['ambulance', 'firetruck', 'garbage-truck'], on: [','], density: 0.025, minFromStart: 34 },
+    { props: ['kart'], on: [','], density: 0.028, minFromStart: 24 },
+    { props: ['ambulance', 'firetruck', 'garbage-truck'], on: [','], density: 0.022, minFromStart: 32 },
   ],
 
   lines: [
     // A well-lit civic core, plus station approaches that visually lead to the
     // railway without turning every pavement into a row of lamp posts.
-    { prop: 'street-light', from: [16, 15], to: [23, 15], spacing: 10, offset: 2.7 },
-    { prop: 'street-light', from: [16, 24], to: [23, 24], spacing: 10, offset: -2.7 },
-    { prop: 'street-light', from: [15, 16], to: [15, 23], spacing: 10, offset: -2.7 },
-    { prop: 'street-light', from: [24, 16], to: [24, 23], spacing: 10, offset: 2.7 },
-    { prop: 'street-light', from: [7, 6], to: [14, 6], spacing: 9, offset: 2.7, alternate: true },
-    { prop: 'street-light', from: [25, 33], to: [32, 33], spacing: 9, offset: -2.7, alternate: true },
+    { prop: 'street-light', from: [14, 13], to: [21, 13], spacing: 10, offset: 2.7 },
+    { prop: 'street-light', from: [14, 22], to: [21, 22], spacing: 10, offset: -2.7 },
+    { prop: 'street-light', from: [13, 14], to: [13, 21], spacing: 10, offset: -2.7 },
+    { prop: 'street-light', from: [22, 14], to: [22, 21], spacing: 10, offset: 2.7 },
+    { prop: 'street-light', from: [7, 6], to: [12, 6], spacing: 9, offset: 2.7, alternate: true },
+    { prop: 'street-light', from: [23, 29], to: [28, 29], spacing: 9, offset: -2.7, alternate: true },
   ],
 
   clusters: [
     {
       id: 'starter-sparkles',
       on: ['P'],
-      count: 18,
+      count: 16,
       radius: 0.82,
       maxFromStart: 19,
       allowNearStart: true,
@@ -182,7 +248,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'commuter-snacks',
       on: ['P'],
-      count: 15,
+      count: 13,
       radius: 0.9,
       maxFromStart: 20,
       allowNearStart: true,
@@ -198,7 +264,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'morning-commute',
       on: ['P'],
-      count: 11,
+      count: 9,
       radius: 1.0,
       minFromStart: 5,
       maxFromStart: 21,
@@ -214,7 +280,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'cafe-rounds',
       on: ['C'],
-      count: 28,
+      count: 18,
       radius: 2.65,
       items: [
         { prop: 'table-cafe', x: 0, z: 0 },
@@ -228,7 +294,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'cafe-canopies',
       on: ['C'],
-      count: 15,
+      count: 10,
       radius: 3.35,
       items: [
         { prop: 'parasol-b', x: 0, z: 0 },
@@ -242,7 +308,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'market-islands',
       on: ['M'],
-      count: 22,
+      count: 20,
       radius: 3.2,
       items: [
         { prop: 'display-fruit', x: -1.25, z: -0.6 },
@@ -264,10 +330,33 @@ export const RAIL_CITY: LevelDef = {
         { prop: 'basket', x: 1.6, z: 1.45, rot: 0.8 },
       ],
     },
+    // ── Oaks: the second collection set ──────────────────────────────────
+    // The `T` anchors scatter singles, which is what makes a park look planted;
+    // the groves are what make the set worth chasing. Four trees fly to the
+    // card together and the grove reads as the better park besides.
+    //
+    // Ahead of `park-social` on purpose. Clusters claim their ground in list
+    // order, and a 5.2 m grove needs a clear patch — behind twenty benches it
+    // placed three times out of five, which put the set back under the
+    // builder's top-up line and scattered the shortfall as lone trees.
+    {
+      id: 'oak-grove',
+      on: ['.'],
+      count: 5,
+      radius: 5.2,
+      minFromStart: 20,
+      freeRotation: true,
+      items: [
+        { prop: 'tree-large', x: -1.6, z: -1.3, scale: 1.1 },
+        { prop: 'tree-large', x: 1.7, z: -0.9, scale: 0.95 },
+        { prop: 'tree-large', x: -0.5, z: 1.8, scale: 1.05 },
+        { prop: 'tree-large', x: 2.2, z: 2.3, scale: 0.9 },
+      ],
+    },
     {
       id: 'park-social',
       on: ['.'],
-      count: 25,
+      count: 20,
       radius: 3.15,
       items: [
         { prop: 'bench-cushion', x: 0, z: -1.05 },
@@ -279,7 +368,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'plaza-popups',
       on: ['P'],
-      count: 15,
+      count: 13,
       radius: 2.5,
       minFromStart: 9,
       items: [
@@ -292,7 +381,7 @@ export const RAIL_CITY: LevelDef = {
     {
       id: 'railside-scrap',
       on: [','],
-      count: 32,
+      count: 30,
       radius: 1.65,
       minFromStart: 22,
       freeRotation: true,
@@ -305,10 +394,18 @@ export const RAIL_CITY: LevelDef = {
         { prop: 'nut', x: 0.58, z: -0.2 },
       ],
     },
+
+    // ── Traffic cones: the first collection set ──────────────────────────
+    // Both cone arrangements are deliberately generous, because a set you find
+    // one piece at a time is a chore and a set you find four at a time is the
+    // reason the cards exist. Between them they place ~50 cones against a
+    // target of 24, comfortably over the builder's 1.6x top-up threshold —
+    // so every cone in the level arrives as part of a group somebody put there,
+    // never as a lone one dropped in to make the numbers work.
     {
       id: 'road-crew',
       on: ['#'],
-      count: 18,
+      count: 10,
       radius: 2.2,
       minFromStart: 15,
       items: [
@@ -319,6 +416,28 @@ export const RAIL_CITY: LevelDef = {
         { prop: 'work-light', x: 0, z: 0 },
       ],
     },
+    // A cordon: seven cones ringing a work light, the whole set jumping to the
+    // card at once when the ball rolls through it. Every offset stays inside
+    // ±1.7 m because only the cluster's centre is guaranteed to be on a road
+    // tile and a road tile is 4 m across — see `downtown-01`.
+    {
+      id: 'cone-cordon',
+      on: ['#'],
+      count: 5,
+      radius: 2.6,
+      minFromStart: 16,
+      items: [
+        { prop: 'cone', x: -1.3, z: -1.4 },
+        { prop: 'cone', x: -0.2, z: -1.7 },
+        { prop: 'cone', x: 1.1, z: -1.3 },
+        { prop: 'cone', x: -1.6, z: 0.1 },
+        { prop: 'cone', x: 1.5, z: 0.2 },
+        { prop: 'cone', x: -0.9, z: 1.5 },
+        { prop: 'cone', x: 0.7, z: 1.6 },
+        { prop: 'work-light', x: 0, z: 0 },
+      ],
+    },
+
     // Waiting areas sit outside the track belt beside the custom station meshes.
     {
       id: 'north-station-waiting',
@@ -338,7 +457,7 @@ export const RAIL_CITY: LevelDef = {
       on: [','],
       count: 1,
       radius: 3.1,
-      at: [27, 39],
+      at: [23, MIRROR],
       rot: Math.PI,
       items: [
         { prop: 'bench-cushion', x: -1.5, z: 0 },
@@ -347,12 +466,16 @@ export const RAIL_CITY: LevelDef = {
         { prop: 'potted-plant', x: 2.8, z: 0.7 },
       ],
     },
+    // On the outer promenade, not on the belt itself: an `at` cluster is
+    // discarded outright when its tile does not match `on`, and the old
+    // freight yard asked for a `,` on a column the railway owns — so it had
+    // never once appeared in the level.
     {
       id: 'freight-yard',
       on: [','],
       count: 1,
       radius: 3.4,
-      at: [35, 11],
+      at: [34, 17],
       freeRotation: true,
       items: [
         { prop: 'box-closed', x: -0.8, z: -0.5 },
@@ -365,17 +488,17 @@ export const RAIL_CITY: LevelDef = {
   ],
 
   lanes: [
-    { points: [[6, 6], [24, 6], [24, 15], [6, 15]], cars: 4, speed: 7.2, loop: true },
-    { points: [[15, 15], [33, 15], [33, 24], [15, 24]], cars: 4, speed: 6.9, loop: true },
-    { points: [[6, 24], [24, 24], [24, 33], [6, 33]], cars: 4, speed: 7.4, loop: true },
-    { points: [[24, 6], [33, 6], [33, 15], [24, 15]], cars: 3, speed: 7.0, loop: true },
-    { points: [[6, 15], [15, 15], [15, 24], [6, 24]], cars: 3, speed: 7.1, loop: true },
-    { points: [[6, 6], [6, 33], [33, 33], [33, 6]], cars: 7, speed: 7.8, loop: true },
+    { points: [[6, 6], [22, 6], [22, 13], [6, 13]], cars: 3, speed: 7.2, loop: true },
+    { points: [[13, 13], [29, 13], [29, 22], [13, 22]], cars: 3, speed: 6.9, loop: true },
+    { points: [[6, 22], [22, 22], [22, 29], [6, 29]], cars: 3, speed: 7.4, loop: true },
+    { points: [[22, 6], [29, 6], [29, 13], [22, 13]], cars: 3, speed: 7.0, loop: true },
+    { points: [[6, 13], [13, 13], [13, 22], [6, 22]], cars: 3, speed: 7.1, loop: true },
+    { points: [[6, 6], [6, 29], [29, 29], [29, 6]], cars: 6, speed: 7.8, loop: true },
   ],
 
   rails: [
     {
-      points: [[6, 2.65], [33, 2.65], [36.35, 6], [36.35, 33], [33, 36.35], [6, 36.35], [2.65, 33], [2.65, 6]],
+      points: [[6, 2.65], [29, 2.65], [32.35, 6], [32.35, 29], [29, 32.35], [6, 32.35], [2.65, 29], [2.65, 6]],
       trackModel: 'track-detailed',
       trackSpacing: 1.5,
       consists: [
@@ -394,22 +517,24 @@ export const RAIL_CITY: LevelDef = {
       ],
       stations: [
         { at: [12, 1.88], length: 17 },
-        { at: [27, 37.12], length: 17 },
+        { at: [23, 33.12], length: 17 },
       ],
     },
     {
-      points: [[7, 4.25], [32, 4.25], [34.75, 7], [34.75, 32], [32, 34.75], [7, 34.75], [4.25, 32], [4.25, 7]],
+      points: [[7, 4.25], [28, 4.25], [30.75, 7], [30.75, 28], [28, 30.75], [7, 30.75], [4.25, 28], [4.25, 7]],
       trackModel: 'track-detailed',
       trackSpacing: 1.5,
       consists: [
       ],
+      // Kept off the road axes: a platform straddling a level crossing reads as
+      // a mistake even when nothing collides with it.
       stations: [
-        { at: [3.52, 27], rot: Math.PI / 2, length: 14 },
-        { at: [35.48, 13], rot: Math.PI / 2, length: 14 },
+        { at: [3.52, 25], rot: Math.PI / 2, length: 14 },
+        { at: [31.48, 10], rot: Math.PI / 2, length: 14 },
       ],
     },
     {
-      points: [[18, 16.1], [21, 16.1], [22.9, 18], [22.9, 21], [21, 22.9], [18, 22.9], [16.1, 21], [16.1, 18]],
+      points: [[16, 14.1], [19, 14.1], [20.9, 16], [20.9, 19], [19, 20.9], [16, 20.9], [14.1, 19], [14.1, 16]],
       trackModel: 'track-detailed',
       trackSpacing: 1.42,
       consists: [
@@ -425,14 +550,23 @@ export const RAIL_CITY: LevelDef = {
   ],
 
   pedestrianOn: [',', '.', 'P', 'M', 'C'],
-  pedestrians: 78,
+  pedestrians: 58,
 
+  // The same two sets as `downtown-01`, and deliberately so: cones send you
+  // down the streets and oaks send you into the parks, which is exactly the
+  // route through this map too. The taxi and metro-car sets they replace were
+  // both found in ones — a taxi is a lone kerbside pickup and there were only
+  // ever two metro cars in the level — so neither ever produced the run of
+  // cards the flight animation is built for.
   collectibles: [
-    { prop: 'taxi', target: 12, label: 'City Taxis' },
-    { prop: 'train-city-car', target: 2, label: 'Metro Cars', guarantee: false },
+    { prop: 'cone', target: 24, label: 'Traffic Cones' },
+    { prop: 'tree-large', target: 14, label: 'Oak Trees' },
   ],
 
-  stars: [7000, 19000, 42000],
+  // Rescaled with the district: roughly a third less content is reachable than
+  // in the 40x40 version, so thresholds that used to mean "a confident sweep"
+  // would now mean "a perfect one".
+  stars: [5500, 15000, 32000],
 
   commercial: {
     kit: 'commercial',

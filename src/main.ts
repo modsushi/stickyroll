@@ -2,9 +2,15 @@
  * Boot and the top-level frame loop.
  *
  * Order matters here: the AudioContext can only start from a user gesture, so
- * the boot screen's PLAY button doubles as the audio unlock. Assets load behind
- * it, which means the download is free — by the time anyone taps, the city is
- * usually already built.
+ * the first tap on the start overlay doubles as the audio unlock. Assets load
+ * behind it, which means the download is free — by the time anyone taps, the
+ * city is usually already built.
+ *
+ * That overlay sits *on top of the live district* rather than in front of a
+ * menu. `game.begin()` runs the moment loading finishes, so the first thing
+ * anyone sees is the map they are about to play, with a logo and the drag
+ * instruction over it. One tap starts the run; everything else — shop, daily
+ * rewards, collection, the level list — hangs off the pause menu.
  */
 
 import { Vector3 } from 'three';
@@ -27,6 +33,8 @@ import { FlyCamera } from './render/FlyCamera';
 import { on, param } from './core/Debug';
 import { runSelfTest, showSelfTest } from './render/SelfTest';
 import { skinById, tickSkins } from './meta/Skins';
+import { powerupById, type PowerupId } from './meta/Powerups';
+import { levelById } from './levels';
 import { Boot } from './ui/Boot';
 import { Collection } from './ui/Collection';
 import { DailyReward } from './ui/DailyReward';
@@ -162,6 +170,44 @@ bus.on('demolish', (e) => {
   game.camera.punch(0.06 + e.power * 0.08);
 });
 
+// ── power-ups ─────────────────────────────────────────────────────────────
+//
+// The button asks; this decides. An empty charge is not a failure to report,
+// it is the one moment the player is definitely interested in buying more —
+// so it opens the shop on the right tab instead of buzzing at them.
+bus.on('powerupRequest', ({ id }) => {
+  const result = game.usePowerup(id as PowerupId);
+  if (result === 'used') return;
+  if (result === 'empty') {
+    sfx.denied();
+    openShop('run', 'powerups', id);
+    return;
+  }
+  // 'unavailable': already the top size, or the run is not live.
+  sfx.denied();
+});
+
+bus.on('powerupUsed', ({ id }) => {
+  const def = powerupById(id);
+  if (!def) return;
+  haptics.demolish(0.5);
+  const p = game.particlesRef();
+  const b = game.ball;
+  if (id === 'magnet') {
+    sfx.whoosh(false);
+    // A ring snapping *inward* from the pull radius, which is the one thing on
+    // screen that tells the player how far the effect reaches.
+    p?.shockwave(b.pos.x, b.pos.z, game.magnetState().radius * 0.5, b.visualRadius * 0.4);
+    p?.spark(b.pos.x, b.pos.y + b.visualRadius, b.pos.z, 22);
+  } else {
+    sfx.whoosh(true);
+  }
+});
+
+// A trail of sparks for as long as the pull runs, so the effect has a state
+// and not just an opening flourish.
+let magnetSparkle = 0;
+
 // ── screen flow ───────────────────────────────────────────────────────────
 // `pauseRequest` is the request; `pause` is Game's notification that it
 // happened. Keeping them separate avoids the handler re-entering itself and
@@ -207,33 +253,72 @@ results.onRetry = () => {
   audio.duck(0);
   restart();
 };
-results.onLevels = () => {
-  results.hide();
-  levels.show();
+results.onNext = (id) => {
+  audio.duck(0);
+  void beginLevel(levelById(id));
 };
+// Left showing underneath, the same way the shop and collection overlay it, so
+// backing out of the list lands on the results screen rather than on nothing.
+// The pending gold is banked by `restart()` either way.
+results.onLevels = () => levels.show();
 results.onCollection = () => collection.show();
-results.onShop = () => shop.show();
+results.onShop = () => openShop('results');
 
 // ── meta screens ──────────────────────────────────────────────────────────
 //
-// All three return to whatever was underneath them. `game.state === 'paused'`
-// is the tell that the pause menu opened them, since the results screen leaves
-// the game 'ended' and the boot menu leaves it 'ready'.
+// Every one of them returns to whatever was underneath. `game.state ===
+// 'paused'` is the tell that the pause menu opened it and therefore hid itself;
+// the results screen leaves the game 'ended' and stays visible below, so there
+// is nothing to restore in that case.
 const backToWhereWeCameFrom = () => {
   if (game.state === 'paused') pause.show();
 };
 
 collection.onClose = backToWhereWeCameFrom;
+
+/**
+ * Where closing the shop should land.
+ *
+ * The shop is now reachable from three places with three different answers, and
+ * `game.state` cannot tell them apart: opening it from the HUD suspends the run,
+ * which sets the state to 'paused' — the same state the pause menu leaves. So
+ * the caller says where it came from.
+ */
+let shopReturn: 'pause' | 'run' | 'results' = 'pause';
+
+function openShop(from: typeof shopReturn, tab?: 'powerups' | 'skins', select?: string) {
+  shopReturn = from;
+  // Suspends rather than pauses: a player who taps the till mid-roll wants to
+  // restock and carry on, not to be handed the pause panel on the way out.
+  if (from === 'run') {
+    game.suspend();
+    audio.duck(0.5);
+  }
+  shop.show(tab, select);
+}
+
 shop.onClose = () => {
-  backToWhereWeCameFrom();
+  if (shopReturn === 'run') {
+    audio.duck(0);
+    game.unsuspend();
+  } else if (shopReturn === 'pause') {
+    pause.show();
+  }
+  // 'results' leaves the results screen showing underneath, as it already was.
   boot.refresh(); // harmless once the boot screen is gone
 };
+
+bus.on('shopRequest', () => openShop('run'));
 // Equipping re-skins the live ball immediately: the whole point of buying one
 // is seeing it, and waiting for the next run to start would bury the payoff.
 shop.onEquip = (id) => game.ball.setSkin(skinById(id));
 
-pause.onShop = () => shop.show();
+pause.onShop = () => openShop('pause');
 pause.onDaily = () => void daily.show().then(backToWhereWeCameFrom);
+pause.onLevels = () => levels.show();
+// Backing out of the level list returns to whichever screen opened it. The
+// results screen is still underneath; the pause panel hid itself on the way in.
+levels.onClose = backToWhereWeCameFrom;
 
 /**
  * The mid-run upgrade draft.
@@ -251,10 +336,19 @@ bus.on('rewardOffer', async () => {
   game.unsuspend();
 });
 
-function restart() {
+/**
+ * Starts a run on whatever level is already loaded.
+ *
+ * `rebuild` is false exactly once: on the very first tap. The district under
+ * the start overlay was built by `game.begin()` as soon as loading finished, so
+ * rebuilding it would throw away the city the player is looking at and stall a
+ * frame doing it. (The builder is seeded, so the result would be identical —
+ * which is precisely why redoing the work buys nothing.)
+ */
+function restart(rebuild = true) {
   results.hide();
   pause.hide();
-  game.begin();
+  if (rebuild) game.begin();
   paintCards();
   hud.reset();
   hud.show(true);
@@ -266,17 +360,15 @@ function restart() {
 let bootHidden = false;
 async function beginLevel(level: typeof game.level) {
   levels.hide();
-  if (DailyReward.pending) {
-    await daily.show();
-    boot.refresh();
-  }
+  const fresh = !bootHidden;
   if (!bootHidden) {
     boot.hide();
     bootHidden = true;
   }
+  const alreadyBuilt = fresh && game.level === level && game.state === 'ready';
   game.setLevel(level);
   music.start();
-  restart();
+  restart(!alreadyBuilt);
   bus.emit('ready', undefined as never);
 }
 
@@ -292,9 +384,13 @@ function dismissMovementHint() {
   save.completeTutorial('intro-finger-v1');
 }
 function showMovementHint() {
+  // Shown once ever, on whichever level the player happens to start with, and
+  // dismissed the moment the ball moves. It used to be pinned to Pocket Park,
+  // which stopped teaching anybody the day Pocket Park stopped being level one.
+  //
   // Versioned separately from the earlier text-only prompt so players who
   // already dismissed that less useful cue still receive the visual tutorial.
-  const shouldShow = game.level.id === 'intro-01' && !save.sawTutorial('intro-finger-v1');
+  const shouldShow = !save.sawTutorial('intro-finger-v1');
   hintVisible = shouldShow;
   movementHint.classList.toggle('off', !shouldShow);
 }
@@ -339,6 +435,24 @@ const loop = new Loop(
         if (dustTimer <= 0) {
           dustTimer = 0.045;
           particles.dust(game.ball.pos.x, game.ball.pos.z, game.ball.visualRadius, speed);
+        }
+      }
+      // Sparks around the rim of the pull while it runs. Drawn out here rather
+      // than inside `Magnet` for the same reason every other effect is: the
+      // simulation does not know a particle system exists.
+      const mag = game.magnetState();
+      if (mag.active) {
+        magnetSparkle -= dt;
+        if (magnetSparkle <= 0) {
+          magnetSparkle = 0.05;
+          const a = Math.random() * Math.PI * 2;
+          const r = mag.radius * (0.55 + Math.random() * 0.45);
+          particles.spark(
+            game.ball.pos.x + Math.cos(a) * r,
+            0.5 + Math.random() * 1.6,
+            game.ball.pos.z + Math.sin(a) * r,
+            2
+          );
         }
       }
     }
@@ -494,19 +608,35 @@ const loop = new Loop(
     sfx.click();
   };
 
-  boot.onShop = async () => {
-    await unlock();
-    shop.show();
-  };
-  boot.onDaily = async () => {
-    await unlock();
-    await daily.show();
-    boot.refresh();
-  };
-
-  boot.onPlay = async () => {
-    await unlock();
-    levels.show();
+  /**
+   * One gesture: start the run, and unlock the audio graph alongside it.
+   *
+   * The two used to be sequential — `await unlock()` and *then* begin — which
+   * made starting the game conditional on sound working. On Chrome for Android
+   * that is a real risk: `AudioContext.resume()` can stay pending indefinitely
+   * (see `RESUME_TIMEOUT_MS`), so the await never returned, `beginLevel` never
+   * ran, and `starting` stayed latched — every subsequent tap was swallowed by
+   * the re-entry guard. The result was a title screen that could not be
+   * dismissed at all, on Android only, which is exactly how it was reported.
+   *
+   * Now nothing is awaited before the run begins. Web Audio uses *sticky*
+   * activation rather than transient, so unlocking still works perfectly well
+   * from outside the handler's own task — and if it does not, the game starts
+   * regardless and the next tap retries the resume.
+   *
+   * The guard is still needed: `pointerdown` and `click` both route here, and a
+   * fast double-tap would otherwise restart the run. It is released again if
+   * the start genuinely fails, so a real error cannot brick the button.
+   */
+  let starting = false;
+  boot.onPlay = () => {
+    if (starting) return;
+    starting = true;
+    void unlock();
+    beginLevel(game.level).catch((err) => {
+      console.error(err);
+      starting = false;
+    });
   };
   levels.onSelect = (level) => void beginLevel(level);
 })().catch((err) => {

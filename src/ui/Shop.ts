@@ -1,5 +1,10 @@
 /**
- * The skin shop.
+ * The shop: skins on one tab, consumable power-ups on the other.
+ *
+ * Power-ups sit *first* because they are the thing a player comes here for
+ * mid-run — they ran out of magnets, they pressed the till, they want more
+ * magnets. A skin is a considered purchase you browse for; a consumable is a
+ * reload, and making someone hunt for the reload is how you lose the sale.
  *
  * Tiles are real 3D renders of the actual material, not painted icons. That
  * matters more than it sounds: half of these skins are procedural shaders whose
@@ -33,6 +38,7 @@ import { sfx } from '../audio/Sfx';
 import { bus } from '../core/Events';
 import { save } from '../core/Save';
 import { playerState } from '../meta/Progression';
+import { buyPowerup, chargesOf, POWERUPS, type PowerupId } from '../meta/Powerups';
 import { buySkin, equipSkin, ownsSkin, SKINS, type SkinDef } from '../meta/Skins';
 import type { Renderer } from '../render/Renderer';
 import { el } from './dom';
@@ -61,6 +67,9 @@ export class Shop {
   private action: HTMLButtonElement;
   private tiles = new Map<string, HTMLElement>();
   private selected = '';
+  private tab: 'powerups' | 'skins' = 'powerups';
+  private tabBar: HTMLElement;
+  private title: HTMLElement;
   private rt?: WebGLRenderTarget;
   private cache = new Map<string, HTMLCanvasElement>();
   private geo = new IcosahedronGeometry(1, 2);
@@ -76,8 +85,25 @@ export class Shop {
     this.root = el('div', { class: 'screen shop hidden' });
 
     this.goldEl = el('div', { class: 'gold-pill' });
+    this.title = el('h1', {}, 'Shop');
     const head = el('div', { class: 'shop-head' });
-    head.append(el('h1', {}, 'Skins'), this.goldEl);
+    head.append(this.title, this.goldEl);
+
+    this.tabBar = el('div', { class: 'shop-tabs' });
+    for (const [id, label] of [['powerups', 'Power-ups'], ['skins', 'Skins']] as const) {
+      const t = el('button', { class: 'shop-tab' }, label) as HTMLButtonElement;
+      t.dataset.tab = id;
+      t.addEventListener('click', () => {
+        if (this.tab === id) return;
+        sfx.click(true);
+        this.tab = id;
+        // Selection is per-tab, so clear it rather than carrying a skin id into
+        // the power-up list and selecting nothing.
+        this.selected = '';
+        this.build();
+      });
+      this.tabBar.append(t);
+    }
 
     this.grid = el('div', { class: 'shop-grid' });
 
@@ -97,7 +123,7 @@ export class Shop {
       this.onClose();
     });
 
-    this.root.append(head, this.grid, this.detail, close);
+    this.root.append(head, this.tabBar, this.grid, this.detail, close);
     parent.append(this.root);
   }
 
@@ -179,10 +205,15 @@ export class Shop {
   }
 
   private build() {
-    const level = playerState().level;
     this.grid.innerHTML = '';
     this.tiles.clear();
+    this.grid.classList.toggle('powerups', this.tab === 'powerups');
+    for (const t of this.tabBar.children) {
+      t.classList.toggle('on', (t as HTMLElement).dataset.tab === this.tab);
+    }
+    if (this.tab === 'powerups') return this.buildPowerups();
 
+    const level = playerState().level;
     for (const skin of SKINS) {
       const owned = ownsSkin(skin.id);
       const locked = skin.unlock > level;
@@ -213,7 +244,53 @@ export class Shop {
     this.paintGold();
   }
 
+  /**
+   * Consumables. Each tile shows what you own now, not a locked/owned state —
+   * a power-up is never "owned", only stocked, and the number in hand is the
+   * only fact that decides whether you buy.
+   */
+  private buildPowerups() {
+    for (const def of POWERUPS) {
+      const held = chargesOf(def.id);
+      const tile = el('div', { class: `skin-tile pu-tile${held > 0 ? ' owned' : ''}` });
+      tile.append(
+        el('div', { class: 'pu-art' }, def.icon),
+        el('div', { class: 'st-name' }, def.name),
+        el('div', { class: `st-badge${held > 0 ? ' on' : ' cost'}` }, held > 0 ? `×${held}` : 'None')
+      );
+      tile.addEventListener('click', () => {
+        sfx.click(true);
+        this.select(def.id);
+      });
+      this.grid.append(tile);
+      this.tiles.set(def.id, tile);
+    }
+    this.select(this.selected || POWERUPS[0].id);
+    this.paintGold();
+  }
+
   private select(id: string) {
+    if (this.tab === 'powerups') return this.selectPowerup(id);
+    this.selectSkin(id);
+  }
+
+  private selectPowerup(id: string) {
+    this.selected = id;
+    for (const [key, tile] of this.tiles) tile.classList.toggle('sel', key === id);
+
+    const def = POWERUPS.find((p) => p.id === id)!;
+    const held = chargesOf(def.id);
+    this.detailName.textContent = `${def.name}${held > 0 ? ` · ${held} left` : ''}`;
+    this.detailBlurb.textContent = def.blurb;
+
+    this.action.classList.remove('ghost');
+    this.action.disabled = false;
+    this.action.textContent =
+      def.bundle > 1 ? `Buy ${def.bundle} · ${def.price}` : `Buy · ${def.price}`;
+    if (save.meta.gold < def.price) this.action.classList.add('ghost');
+  }
+
+  private selectSkin(id: string) {
     this.selected = id;
     for (const [key, tile] of this.tiles) tile.classList.toggle('sel', key === id);
 
@@ -245,6 +322,8 @@ export class Shop {
   }
 
   private act() {
+    if (this.tab === 'powerups') return this.buyCharges();
+
     const skin = SKINS.find((s) => s.id === this.selected);
     if (!skin) return;
     const level = playerState().level;
@@ -283,14 +362,36 @@ export class Shop {
     this.tiles.get(skin.id)?.classList.add('bought');
   }
 
+  private buyCharges() {
+    const def = POWERUPS.find((p) => p.id === this.selected);
+    if (!def) return;
+
+    const before = save.meta.gold;
+    if (!buyPowerup(def.id as PowerupId)) {
+      sfx.denied();
+      this.flash(`${def.price - before} more gold needed`);
+      return;
+    }
+
+    sfx.purchase();
+    bus.emit('goldChange', { gold: save.meta.gold, delta: -def.price });
+    // The in-run buttons read their counts off this, and the shop can be open
+    // over a suspended run with those buttons visible behind it.
+    bus.emit('powerupChange', undefined as never);
+    this.build();
+    this.tiles.get(def.id)?.classList.add('bought');
+  }
+
   /** Momentary message under the action button, for refusals. */
   private flash(message: string) {
     this.detailBlurb.textContent = message;
     this.detailBlurb.classList.add('warn');
     setTimeout(() => {
       this.detailBlurb.classList.remove('warn');
+      const def = POWERUPS.find((p) => p.id === this.selected);
       const skin = SKINS.find((s) => s.id === this.selected);
-      if (skin) this.detailBlurb.textContent = skin.blurb;
+      const blurb = this.tab === 'powerups' ? def?.blurb : skin?.blurb;
+      if (blurb) this.detailBlurb.textContent = blurb;
     }, 1600);
   }
 
@@ -302,7 +403,17 @@ export class Shop {
     );
   }
 
-  show() {
+  /**
+   * `tab` and `select` let an empty in-run button land straight on its own
+   * entry. Arriving from a spent Size Up on a page showing Magnetic Pull makes
+   * the player hunt for the thing they just asked for.
+   */
+  show(tab?: 'powerups' | 'skins', select?: string) {
+    if (tab) {
+      this.tab = tab;
+      this.selected = '';
+    }
+    if (select) this.selected = select;
     this.build();
     this.root.classList.remove('hidden');
   }

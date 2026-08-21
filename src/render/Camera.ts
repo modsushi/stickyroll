@@ -202,4 +202,14 @@ export class FollowCamera {
   get focusPoint() {
     return this.focus;
   }
+
+  /**
+   * Distance from the focus point to the lens. Anything sized in *screen*
+   * terms rather than world terms — the haze in particular — has to scale with
+   * this, because it more than triples between the opening framing and the top
+   * tier.
+   */
+  get viewDistance() {
+    return Math.hypot(this.dist, this.height);
+  }
 }

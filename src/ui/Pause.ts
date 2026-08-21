@@ -4,15 +4,26 @@ import { haptics } from '../core/Haptics';
 import { save } from '../core/Save';
 import { playerState } from '../meta/Progression';
 import { rankOf, UPGRADES } from '../meta/Upgrades';
+import { DailyReward } from './DailyReward';
 import { el } from './dom';
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
 
+/**
+ * The pause panel — and, since the entry screen was removed, the game's only
+ * menu.
+ *
+ * Shop, Rewards, Collection and the level list all live here now. The daily
+ * reward in particular used to be a modal thrown in front of the player on the
+ * way into a run; it is a reward, not a toll, so it waits behind a button that
+ * wears the unclaimed dot instead.
+ */
 export class Pause {
   private root: HTMLElement;
   private diag: HTMLElement;
   private purse: HTMLElement;
   private perkStrip: HTMLElement;
+  private dailyBtn!: HTMLButtonElement;
   /** Set by main so the pause screen can report how the frame is being drawn. */
   describeRenderer: () => string = () => '';
   onResume: () => void = () => {};
@@ -20,6 +31,7 @@ export class Pause {
   onCollection: () => void = () => {};
   onShop: () => void = () => {};
   onDaily: () => void = () => {};
+  onLevels: () => void = () => {};
 
   constructor(parent: HTMLElement) {
     this.root = el('div', { class: 'screen hidden' });
@@ -62,15 +74,22 @@ export class Pause {
       this.onShop();
     });
 
-    const daily = el('button', { class: 'btn ghost' }, 'Rewards');
-    daily.addEventListener('click', () => {
+    this.dailyBtn = el('button', { class: 'btn ghost' }, 'Rewards') as HTMLButtonElement;
+    this.dailyBtn.addEventListener('click', () => {
       sfx.click(true);
       this.hide();
       this.onDaily();
     });
 
+    const levels = el('button', { class: 'btn ghost' }, 'Levels');
+    levels.addEventListener('click', () => {
+      sfx.click(true);
+      this.hide();
+      this.onLevels();
+    });
+
     const row = el('div', { class: 'row' });
-    row.append(restart, shop, coll, daily);
+    row.append(restart, levels, shop, coll, this.dailyBtn);
 
     // Reachable on a phone, where there is no F3 key. If the canvas ever comes
     // up black again this is the first thing worth reading.
@@ -170,6 +189,9 @@ export class Pause {
     this.diag.textContent = this.describeRenderer();
     this.paintPurse();
     this.paintPerks();
+    // The only nudge the game gives. It used to sit on the boot menu, which no
+    // longer exists, so without this an unclaimed streak is invisible.
+    this.dailyBtn.classList.toggle('nudge', DailyReward.pending);
     this.root.classList.remove('hidden');
   }
 

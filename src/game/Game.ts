@@ -11,9 +11,10 @@ import { bus } from '../core/Events';
 import { Input } from '../core/Input';
 import { save } from '../core/Save';
 import { PROPS, catalogModels, isBuilding, resolveProps, type KitId } from '../data/props';
-import { INTRO } from '../levels/intro-01';
+import { FIRST_LEVEL, nextLevel } from '../levels';
 import type { LevelDef } from '../levels/types';
 import { goldFromScore, xpFromRun } from '../meta/Progression';
+import { chargesOf, spendCharge, type PowerupId } from '../meta/Powerups';
 import { perks } from '../meta/Upgrades';
 import { FollowCamera } from '../render/Camera';
 import type { Renderer } from '../render/Renderer';
@@ -32,6 +33,7 @@ import { Demolition } from '../render/Demolition';
 import { Particles } from '../render/Particles';
 import { BlockStacks } from './BlockStacks';
 import { CubePets } from './CubePets';
+import { Magnet } from './Magnet';
 import { Wind } from './Wind';
 
 const _dirScreen = { x: 0, y: 0 };
@@ -45,7 +47,7 @@ export class Game {
   readonly score = new Score();
   readonly camera: FollowCamera;
 
-  level: LevelDef = INTRO;
+  level: LevelDef = FIRST_LEVEL;
   city!: BuiltCity;
   private baker!: BallBaker;
   private sticking!: Sticking;
@@ -59,21 +61,68 @@ export class Game {
   private blocks!: BlockStacks;
   private cubePets!: CubePets;
   private wind!: Wind;
+  private magnet!: Magnet;
 
   timeLeft = 0;
   private lastCountdown = -1;
 
   /**
-   * The mid-run upgrade draft fires once per run, at whichever comes first: the
-   * ball reaching the middle tier, or half the clock running out.
+   * Seconds left in the victory lap, once the ball reaches the top tier.
+   *
+   * Max tier used to be the end of the run's *pacing* but not of the run: every
+   * remaining prop was edible, nothing could tier up any more, and the clock
+   * still had a minute or two on it. That last stretch is the only part of the
+   * game with no beat in it, so reaching Roll Master now *is* the win — a few
+   * seconds to feel enormous, then the results screen.
+   *
+   * `NaN`-free sentinel: negative means no finale is running.
+   */
+  private finaleLeft = -1;
+  private static readonly FINALE_SECONDS = 5;
+
+  /**
+   * The upgrade draft fires once per run, at whichever comes first: the ball
+   * reaching `DRAFT_TIER`, or the clock dropping to `DRAFT_TIME_LEFT`.
    *
    * Both conditions are needed. Tier alone means a player having a bad run
    * never sees the reward that would have helped, which is precisely backwards.
    * Time alone means a strong player gets it long after the point where it
-   * changes anything. Whichever fires first is the moment the run stops being
-   * new and starts needing a lift.
+   * changes anything.
+   *
+   * ## Why these numbers moved
+   *
+   * The pair was tuned when a run always went the full clock. Two things have
+   * changed since, and both pushed the draft far too early:
+   *
+   *  - Reaching the top size now *ends* the run, so a run is a good deal
+   *    shorter than its timer. Measured against an autopilot sweep, the old
+   *    tier-4 trigger landed 8-21% of the way in — the game stopped to hand you
+   *    a menu before you had any sense of the run you were having.
+   *  - Half the clock now falls at 133-240% of the actual run length, so the
+   *    time condition had quietly stopped firing at all. It was dead code
+   *    guarding the one case it exists for — the player having a bad run.
+   *
+   * City Eater is the trigger now. Over half the run's whole mass climb happens
+   * in that one band — tier 7 costs 5,500 and tier 8 costs 12,000 — so it is
+   * where a player spends the back half of a run, hunting frontages rather than
+   * sweeping litter.
+   *
+   * The autopilot measures it at 81-84% of the run, but that number flatters:
+   * the harness beelines to shopfronts worth a thousand each and crosses the
+   * band in ten seconds, which is not how anybody plays. Take it as an upper
+   * bound. What matters is that the card now arrives when the ball is already
+   * enormous, and never in the opening exchanges.
+   *
+   * A card taken this late does little for the run in progress, and that is
+   * fine: upgrades are permanent, which is what the draft screen says on it.
+   * The pick is banked for every run after this one.
+   *
+   * The clock fallback moved with it — a third of the timer left is late enough
+   * that a good run always beats it to the trigger, and early enough that a
+   * player still stuck below City Eater gets their card with time to spend it.
    */
-  private static readonly DRAFT_TIER = 4;
+  private static readonly DRAFT_TIER = 7;
+  private static readonly DRAFT_TIME_LEFT = 0.35;
   private draftOffered = false;
 
   /**
@@ -166,6 +215,7 @@ export class Game {
     this.blocks = new BlockStacks(this.level, this.city.hash);
     this.cubePets = new CubePets(this.level);
     this.wind = new Wind(this.level, this.city);
+    this.magnet = new Magnet(this.ball, this.city);
 
     scene.add(
       this.traffic.group,
@@ -183,6 +233,7 @@ export class Game {
     this.score.reset();
     this.timeLeft = this.level.time + perks().extraTime;
     this.lastCountdown = -1;
+    this.finaleLeft = -1;
     this.draftOffered = false;
     // `end()` disables input so the results screen can't be played behind.
     // A fresh run has to hand it back, or Play Again deals you a ball that
@@ -244,6 +295,9 @@ export class Game {
     this.peds.step(dt, this.ball);
     this.trains.step(dt, this.ball);
     this.wind.step(dt);
+    // Before sticking, so anything the pull delivers this step is eaten this
+    // step rather than sitting inside the ball for a frame.
+    this.magnet.step(dt);
     const crumbled = this.blocks.step(dt, this.ball);
     if (crumbled) {
       this.camera.shake(0.28);
@@ -273,15 +327,28 @@ export class Game {
       this.lastCountdown = secs;
       bus.emit('timeUp', undefined as never);
     }
-    // Intro maps finish as soon as their clearable props are gone. Buildings
-    // are landmarks here: they deliberately do not turn a beginner level into
+
+    // The victory lap. Running it down here rather than on a timer means it
+    // stops with the simulation: a player who pauses or takes an upgrade card
+    // in the last second does not come back to a finished run.
+    if (this.finaleLeft >= 0) {
+      this.finaleLeft -= dt;
+      bus.emit('finaleTick', { secondsLeft: Math.max(0, this.finaleLeft) });
+      if (this.finaleLeft <= 0) {
+        this.end(true);
+        return;
+      }
+    }
+
+    // Pocket Park finishes as soon as its clearable props are gone. Buildings
+    // are landmarks here: they deliberately do not turn a gentle level into
     // a tier-seven demolition grind.
     if (this.level.clearToComplete && this.city.props.all.every((p) => p.absorbed || isBuilding(p.def))) {
       this.end(true);
     } else if (this.timeLeft <= 0) {
-      // The intro is a welcoming tour rather than a pass/fail test. Its timer
+      // Pocket Park is a welcoming tour rather than a pass/fail test. Its timer
       // keeps the run brisk, but either clearing it or reaching time-up earns
-      // the completion and unlocks Downtown.
+      // the completion.
       this.end(Boolean(this.level.clearToComplete));
     }
   }
@@ -296,8 +363,8 @@ export class Game {
    */
   private checkDraft() {
     if (this.draftOffered || this.autopilot) return;
-    const halfway = this.timeLeft <= (this.level.time + perks().extraTime) * 0.5;
-    if (this.ball.growth.tier < Game.DRAFT_TIER && !halfway) return;
+    const total = this.level.time + perks().extraTime;
+    if (this.ball.growth.tier < Game.DRAFT_TIER && this.timeLeft > total * Game.DRAFT_TIME_LEFT) return;
     this.draftOffered = true;
     bus.emit('rewardOffer', undefined as never);
   }
@@ -422,6 +489,74 @@ export class Game {
     this.camera.punch(0.85);
     this.camera.shake(0.5);
     bus.emit('tierUp', { tier, radius: TIERS[tier].radius, prevRadius: prev });
+
+    // Reaching the top tier ends the run — see `finaleLeft`. The lap is not
+    // skipped when the clock is nearly out: whichever runs down first wins, and
+    // a Roll Master finish with two seconds on the timer still gets its two
+    // seconds of being enormous.
+    if (this.ball.growth.isMax && this.finaleLeft < 0 && !this.autopilot) {
+      this.finaleLeft = Game.FINALE_SECONDS;
+      bus.emit('finaleStart', { seconds: Game.FINALE_SECONDS });
+    }
+  }
+
+  // ── power-ups ───────────────────────────────────────────────────────────
+
+  /**
+   * Spends a charge and applies it, or reports why it could not.
+   *
+   * Returns a reason rather than throwing or silently doing nothing, because
+   * the two failure cases want opposite responses from the UI: out of charges
+   * is an invitation to the shop, while "nothing left to grow into" is just a
+   * button that should have been disabled and needs a shrug, not a sales pitch.
+   * Nothing is spent unless the effect actually lands.
+   */
+  usePowerup(id: PowerupId): 'used' | 'empty' | 'unavailable' {
+    if (this.state !== 'playing') return 'unavailable';
+    if (chargesOf(id) <= 0) return 'empty';
+
+    if (id === 'grow') {
+      // Refused at the top rather than eaten silently: a charge that buys
+      // nothing is the worst possible outcome for a paid consumable.
+      if (this.ball.growth.isMax) return 'unavailable';
+      if (!spendCharge(id)) return 'empty';
+      this.growOneTier();
+      bus.emit('powerupUsed', { id });
+      return 'used';
+    }
+
+    if (!spendCharge(id)) return 'empty';
+    this.magnet.start();
+    bus.emit('powerupUsed', { id });
+    return 'used';
+  }
+
+  /**
+   * Size Up: hands over exactly the mass the next tier is still waiting on.
+   *
+   * Setting the radius directly would be one line and wrong — the growth meter,
+   * the tier banner, the music layer, the baker's prune and the top-tier finale
+   * all hang off `growth.add` crossing a threshold. Paying the shortfall means
+   * a bought tier and an earned one are the same event, and the mass ledger
+   * stays honest for every tier after it.
+   */
+  private growOneTier() {
+    const g = this.ball.growth;
+    const shortfall = TIERS[g.tier + 1].mass - g.mass;
+    const crossed = g.add(Math.max(0, shortfall));
+    if (crossed >= 0) {
+      this.onTierUp(crossed);
+      this.ball.beginGrow();
+    }
+  }
+
+  /** Live magnet state for the HUD ring and the effect layer. */
+  magnetState() {
+    return {
+      active: this.magnet?.active ?? false,
+      progress: this.magnet?.progress ?? 0,
+      radius: this.magnet?.radius ?? 0,
+    };
   }
 
   /** Render-rate update: visuals only, safe to run at any framerate. */
@@ -430,6 +565,7 @@ export class Game {
     this.baker?.update(dt, this.ball.growth.radius);
     this.camera.update(this.ball.pos, this.ball.vel, this.ball.visualRadius, dt);
     this.renderer.focusShadow(this.ball.pos, this.ball.visualRadius);
+    this.renderer.fitFog(this.camera.viewDistance);
     this.traffic?.render(dt);
     this.trains?.render(dt);
     if (this.peds) {
@@ -449,6 +585,12 @@ export class Game {
     this.state = 'ended';
     this.input.enabled = false;
 
+    // Reaching the top tier *is* the win, so it counts as one however the run
+    // actually stopped. Without this, hitting Roll Master with four seconds on
+    // the clock ended in "Time!" — the clock beat the victory lap to `end`, and
+    // the best possible finish read as the worst one.
+    completed = completed || this.finaleLeft >= 0;
+
     // Time bonus rewards finishing early on a cleared street; set bonuses reward
     // completing a collection. Grand Finale scales both.
     const finale = perks().finaleMult;
@@ -459,10 +601,13 @@ export class Game {
 
     const stars = this.level.stars.reduce((n, t) => (this.score.score >= t ? n + 1 : n), 0);
     save.recordLevel(this.level.id, this.score.score, stars, this.score.bestCombo);
-    if (completed && this.level.id === 'intro-01') save.unlock('downtown-01');
-    // Standard city levels are score attacks rather than clear-everything
-    // objectives. Earning a star is their completion gate for the next map.
-    if (this.level.id === 'downtown-01' && stars > 0) save.unlock('rail-city-01');
+
+    // One rule for every level, following the order in `levels/index.ts`:
+    // finishing the objective *or* earning a single star opens the next map.
+    // Score attacks have no clear condition, so a star is their gate; Pocket
+    // Park has no meaningful score floor, so clearing it is enough.
+    const next = nextLevel(this.level.id);
+    const newlyUnlocked = next && (completed || stars > 0) ? save.unlock(next.id) : false;
 
     // XP is banked here rather than on the results screen: it is not a choice,
     // it cannot be declined, and a player who closes the tab during the count-up
@@ -474,6 +619,11 @@ export class Game {
 
     bus.emit('levelEnd', {
       completed,
+      // Where "Next Level" goes. Reads the save rather than this run's result,
+      // so replaying a level you have already beaten still offers the hop
+      // forward instead of stranding you on the results screen.
+      next: next && save.unlocked(next.id) ? next.id : undefined,
+      newlyUnlocked,
       score: this.score.score,
       stars,
       bestCombo: this.score.bestCombo,
